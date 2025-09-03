@@ -1,0 +1,27 @@
+# Build artifacts
+bin/
+obj/
+
+# VS Code
+.vscode/
+
+# User secrets / local settings
+FunctionApp/local.settings.json
+**/local.settings.json
+*.user
+*.suo
+
+# Azurite local data
+.azurite/
+
+# macOS
+.DS_Store
+
+# NuGet
+*.nupkg
+.nuget/
+packages/
+
+# Logs
+*.log
+npm-debug.log*
