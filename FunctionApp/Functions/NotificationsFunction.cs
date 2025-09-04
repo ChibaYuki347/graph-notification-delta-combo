@@ -31,7 +31,7 @@ public class NotificationsFunction
         var validationToken = qs.Get("validationToken");
         if (!string.IsNullOrEmpty(validationToken))
         {
-            _logger.LogInformation("Validation request received.");
+            _logger.LogInformation("Validation request received. RawUrl={url} tokenLength={len}", req.Url, validationToken.Length);
             var resp = req.CreateResponse(HttpStatusCode.OK);
             resp.Headers.Add("Content-Type", "text/plain; charset=utf-8");
             await resp.WriteStringAsync(validationToken);
