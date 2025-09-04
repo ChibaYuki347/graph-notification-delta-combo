@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using FunctionApp.Models;
 using FunctionApp.Utils;
+using FunctionApp.Services;
 
 namespace FunctionApp.Functions;
 
@@ -15,11 +16,13 @@ public class NotificationsFunction
 {
     private readonly ILogger _logger;
     private readonly IConfiguration _config;
+    private readonly IStateStore _state;
 
-    public NotificationsFunction(ILoggerFactory lf, IConfiguration config)
+    public NotificationsFunction(ILoggerFactory lf, IConfiguration config, IStateStore state)
     {
         _logger = lf.CreateLogger<NotificationsFunction>();
         _config = config;
+        _state = state;
     }
 
     [Function("Notifications")]
@@ -67,7 +70,26 @@ public class NotificationsFunction
                 continue; // drop suspicious notification
             }
 
-            var room = GraphHelpers.TryParseRoomFromResource(n.Resource) ?? "unknown@unknown";
+            // First try to extract room from resource
+            var room = GraphHelpers.TryParseRoomFromResource(n.Resource);
+            
+            // If resource-based extraction failed or returned GUID, try subscription lookup
+            if (string.IsNullOrEmpty(room) || Guid.TryParse(room, out _))
+            {
+                _logger.LogInformation("Resource extraction failed or returned GUID ({room}), trying subscription lookup for {sub}", room, n.SubscriptionId);
+                room = await _state.GetRoomBySubscriptionIdAsync(n.SubscriptionId);
+                
+                if (string.IsNullOrEmpty(room))
+                {
+                    _logger.LogWarning("Could not determine room for subscription {sub}, resource {resource}", n.SubscriptionId, n.Resource);
+                    room = "unknown@unknown";
+                }
+                else
+                {
+                    _logger.LogInformation("Successfully resolved subscription {sub} to room {room}", n.SubscriptionId, room);
+                }
+            }
+
             var msg = new ChangeMessage(n.SubscriptionId, room, n.ChangeType, n.Resource);
             var json = JsonSerializer.Serialize(msg);
             // NOTE: QueueClient handles base64 transparently; provide plain JSON

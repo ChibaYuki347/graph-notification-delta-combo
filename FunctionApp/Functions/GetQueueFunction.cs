@@ -24,13 +24,18 @@ public class GetQueueFunction
     {
         var storage = _config["AzureWebJobsStorage"];
         var queueName = _config["Webhook:NotificationQueue"];
+        var queryCollection = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        var poison = queryCollection["poison"] == "true";
+        
         if (string.IsNullOrEmpty(storage) || string.IsNullOrEmpty(queueName))
         {
             var bad = req.CreateResponse(HttpStatusCode.InternalServerError);
             await bad.WriteStringAsync("Missing AzureWebJobsStorage or Webhook:NotificationQueue");
             return bad;
         }
-        var client = new QueueClient(storage, queueName);
+        
+        var actualQueueName = poison ? queueName + "-poison" : queueName;
+        var client = new QueueClient(storage, actualQueueName);
         try { await client.CreateIfNotExistsAsync(); } catch { /* ignore */ }
         var peek = await client.PeekMessagesAsync(maxMessages: 16);
         var items = peek.Value.Select(m => new { m.MessageId, m.InsertedOn, m.ExpiresOn, Text = m.MessageText });

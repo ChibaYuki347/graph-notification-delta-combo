@@ -64,4 +64,19 @@ public class BlobStateStore : IStateStore
         }
         return result;
     }
+
+    public async Task<string?> GetRoomBySubscriptionIdAsync(string subscriptionId, CancellationToken ct = default)
+    {
+        // Search through all known rooms to find the one with the matching subscription ID
+        var rooms = await GetKnownRoomsAsync(ct);
+        foreach (var room in rooms)
+        {
+            var subscription = await GetSubscriptionAsync(room, ct);
+            if (subscription?.SubscriptionId == subscriptionId)
+            {
+                return room;
+            }
+        }
+        return null;
+    }
 }

@@ -43,85 +43,121 @@ public class DeltaWorkerFunction
         ChangeMessage? msg = null;
         try
         {
-            if (message.TrimStart().StartsWith("{"))
+            try
             {
-                msg = JsonSerializer.Deserialize<ChangeMessage>(message);
-            }
-            else
-            {
-                // try base64 fallback (in case old double-encoded messages still present)
-                try
+                if (message.TrimStart().StartsWith("{"))
                 {
-                    var data = System.Convert.FromBase64String(message);
-                    var inner = System.Text.Encoding.UTF8.GetString(data);
-                    msg = JsonSerializer.Deserialize<ChangeMessage>(inner);
-                    _logger.LogInformation("Decoded base64 wrapper for message.");
+                    msg = JsonSerializer.Deserialize<ChangeMessage>(message);
                 }
-                catch { }
+                else
+                {
+                    // try base64 fallback (in case old double-encoded messages still present)
+                    try
+                    {
+                        var data = System.Convert.FromBase64String(message);
+                        var inner = System.Text.Encoding.UTF8.GetString(data);
+                        msg = JsonSerializer.Deserialize<ChangeMessage>(inner);
+                        _logger.LogInformation("Decoded base64 wrapper for message.");
+                    }
+                    catch { }
+                }
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to deserialize queue message");
+                throw; // Re-throw to let Function runtime handle retry logic
+            }
+            
+            if (msg is null)
+            {
+                _logger.LogWarning("Message skipped (null after deserialization)");
+                return;
+            }
+
+            var room = msg.RoomUpn;
+            _logger.LogInformation("Processing change for room: {room}", room);
+
+            var deltaLink = await _state.GetDeltaLinkAsync(room);
+            DeltaGetResponse? page;
+
+            try
+            {
+                if (!string.IsNullOrEmpty(deltaLink))
+                {
+                    _logger.LogInformation("Using existing delta link for room {room}", room);
+                    page = await _graph.Users[room].CalendarView.Delta.WithUrl(deltaLink).GetAsDeltaGetResponseAsync(cfg =>
+                    {
+                        cfg.Headers.Add("Prefer", "outlook.body-content-type=\"text\"");
+                        cfg.Headers.Add("Prefer", "outlook.timezone=\"Tokyo Standard Time\"");
+                    });
+                }
+                else
+                {
+                    var start = DateTimeOffset.UtcNow.Date.AddDays(-_window.DaysPast);
+                    var end = DateTimeOffset.UtcNow.Date.AddDays(_window.DaysFuture);
+                    _logger.LogInformation("Starting fresh delta query for room {room} from {start} to {end}", room, start, end);
+                    page = await _graph.Users[room].CalendarView.Delta.GetAsDeltaGetResponseAsync(cfg =>
+                    {
+                        cfg.QueryParameters.StartDateTime = start.ToString("o");
+                        cfg.QueryParameters.EndDateTime = end.ToString("o");
+                        cfg.Headers.Add("Prefer", "outlook.body-content-type=\"text\"");
+                        cfg.Headers.Add("Prefer", "outlook.timezone=\"Tokyo Standard Time\"");
+                        // NOTE: $select/$filter/$orderby are not supported on calendarView/delta
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to query Graph API for room {room}", room);
+                throw; // Re-throw to let Function runtime handle retry logic
+            }
+
+            var loopGuard = 0;
+            while (page is not null && loopGuard < 20)
+            {
+                loopGuard++;
+                var events = page.Value ?? new List<Event>();
+                _logger.LogInformation("Processing {eventCount} events in delta page {pageNum}", events.Count, loopGuard);
+                
+                foreach (var ev in events)
+                {
+                    try
+                    {
+                        var bodyText = ev.Body?.ContentType == BodyType.Text ? ev.Body?.Content : ev.BodyPreview;
+                        var visitorId = _visitor.Extract(bodyText);
+                        
+                        var bodyPreview = bodyText != null ? bodyText.Substring(0, Math.Min(200, bodyText.Length)) : "null";
+                        _logger.LogInformation("Event: {subject} | VisitorID: {visitorId} | BodyText: {bodyText}", 
+                            ev.Subject, visitorId ?? "None", bodyPreview);
+                        
+                        await _cache.UpsertAsync(room, ev, visitorId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to process event {eventId} for room {room}", ev.Id, room);
+                        // Continue processing other events instead of failing the entire batch
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(page.OdataNextLink))
+                {
+                    page = await _graph.Users[room].CalendarView.Delta.WithUrl(page.OdataNextLink).GetAsDeltaGetResponseAsync();
+                }
+                else
+                {
+                    if (!string.IsNullOrEmpty(page.OdataDeltaLink))
+                        await _state.SetDeltaLinkAsync(room, page.OdataDeltaLink);
+                    _logger.LogInformation("No next link. DeltaLink captured? {hasDelta}", !string.IsNullOrEmpty(page.OdataDeltaLink));
+                    break;
+                }
+            }
+
+            _logger.LogInformation("Delta sync finished: {room}", room);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to deserialize queue message");
+            _logger.LogError(ex, "DeltaWorker failed for message: {message}", message);
+            throw; // Re-throw to let Function runtime handle retry logic
         }
-        if (msg is null)
-        {
-            _logger.LogWarning("Message skipped (null after deserialization)");
-            return;
-        }
-
-        var room = msg.RoomUpn;
-        _logger.LogInformation("Processing change for room: {room}", room);
-
-        var deltaLink = await _state.GetDeltaLinkAsync(room);
-    DeltaGetResponse? page;
-
-        if (!string.IsNullOrEmpty(deltaLink))
-        {
-            page = await _graph.Users[room].CalendarView.Delta.WithUrl(deltaLink).GetAsDeltaGetResponseAsync(cfg =>
-            {
-                cfg.Headers.Add("Prefer", "outlook.body-content-type=\"text\"");
-                cfg.Headers.Add("Prefer", "outlook.timezone=\"Tokyo Standard Time\"");
-            });
-        }
-        else
-        {
-            var start = DateTimeOffset.UtcNow.Date.AddDays(-_window.DaysPast);
-            var end = DateTimeOffset.UtcNow.Date.AddDays(_window.DaysFuture);
-            page = await _graph.Users[room].CalendarView.Delta.GetAsDeltaGetResponseAsync(cfg =>
-            {
-                cfg.QueryParameters.StartDateTime = start.ToString("o");
-                cfg.QueryParameters.EndDateTime = end.ToString("o");
-                cfg.Headers.Add("Prefer", "outlook.body-content-type=\"text\"");
-                cfg.Headers.Add("Prefer", "outlook.timezone=\"Tokyo Standard Time\"");
-                // NOTE: $select/$filter/$orderby are not supported on calendarView/delta
-            });
-        }
-
-        var loopGuard = 0;
-        while (page is not null && loopGuard < 20)
-        {
-            loopGuard++;
-            var events = page.Value ?? new List<Event>();
-            foreach (var ev in events)
-            {
-                var visitorId = _visitor.Extract(ev.Body?.ContentType == BodyType.Text ? ev.Body?.Content : ev.BodyPreview);
-                await _cache.UpsertAsync(room, ev, visitorId);
-            }
-
-            if (!string.IsNullOrEmpty(page.OdataNextLink))
-            {
-                page = await _graph.Users[room].CalendarView.Delta.WithUrl(page.OdataNextLink).GetAsDeltaGetResponseAsync();
-            }
-            else
-            {
-                if (!string.IsNullOrEmpty(page.OdataDeltaLink))
-                    await _state.SetDeltaLinkAsync(room, page.OdataDeltaLink);
-                _logger.LogInformation("No next link. DeltaLink captured? {hasDelta}", !string.IsNullOrEmpty(page.OdataDeltaLink));
-                break;
-            }
-        }
-
-        _logger.LogInformation("Delta sync finished: {room}", room);
     }
 }

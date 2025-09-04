@@ -20,13 +20,29 @@ public class GetStateFunction
 
     [Function("GetState")]
     public async Task<HttpResponseData> Run(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "graph/state/{roomUpn?}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "delete", Route = "graph/state/{roomUpn?}")] HttpRequestData req,
         string? roomUpn)
     {
         var blobConn = _config["Blob:Connection"] ?? _config["AzureWebJobsStorage"];
         var stateContainer = _config["Blob:StateContainer"] ?? "state";
         var svc = new BlobServiceClient(blobConn);
         var container = svc.GetBlobContainerClient(stateContainer);
+
+        // Handle DELETE requests
+        if (req.Method == "DELETE" && !string.IsNullOrEmpty(roomUpn))
+        {
+            var subBlobToDelete = container.GetBlobClient($"sub/{roomUpn}.json");
+            var deltaBlobToDelete = container.GetBlobClient($"sub/{roomUpn}.delta");
+            
+            await subBlobToDelete.DeleteIfExistsAsync();
+            await deltaBlobToDelete.DeleteIfExistsAsync();
+            
+            _logger.LogWarning("Deleted state for room {room}", roomUpn);
+            
+            var deleteResp = req.CreateResponse(HttpStatusCode.OK);
+            await deleteResp.WriteStringAsync($"Deleted state for {roomUpn}");
+            return deleteResp;
+        }
 
         var list = new List<object>();
         if (string.IsNullOrEmpty(roomUpn))

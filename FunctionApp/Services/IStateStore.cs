@@ -17,4 +17,5 @@ public interface IStateStore
     Task<string?> GetDeltaLinkAsync(string roomUpn, CancellationToken ct = default);
     Task SetDeltaLinkAsync(string roomUpn, string deltaLink, CancellationToken ct = default);
     Task<IEnumerable<string>> GetKnownRoomsAsync(CancellationToken ct = default);
+    Task<string?> GetRoomBySubscriptionIdAsync(string subscriptionId, CancellationToken ct = default);
 }
