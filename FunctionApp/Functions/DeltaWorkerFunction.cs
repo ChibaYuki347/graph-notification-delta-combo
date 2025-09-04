@@ -43,7 +43,22 @@ public class DeltaWorkerFunction
         ChangeMessage? msg = null;
         try
         {
-            msg = JsonSerializer.Deserialize<ChangeMessage>(message);
+            if (message.TrimStart().StartsWith("{"))
+            {
+                msg = JsonSerializer.Deserialize<ChangeMessage>(message);
+            }
+            else
+            {
+                // try base64 fallback (in case old double-encoded messages still present)
+                try
+                {
+                    var data = System.Convert.FromBase64String(message);
+                    var inner = System.Text.Encoding.UTF8.GetString(data);
+                    msg = JsonSerializer.Deserialize<ChangeMessage>(inner);
+                    _logger.LogInformation("Decoded base64 wrapper for message.");
+                }
+                catch { }
+            }
         }
         catch (Exception ex)
         {

@@ -70,7 +70,9 @@ public class NotificationsFunction
             var room = GraphHelpers.TryParseRoomFromResource(n.Resource) ?? "unknown@unknown";
             var msg = new ChangeMessage(n.SubscriptionId, room, n.ChangeType, n.Resource);
             var json = JsonSerializer.Serialize(msg);
-            await queue.SendMessageAsync(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json)));
+            // NOTE: QueueClient handles base64 transparently; provide plain JSON
+            await queue.SendMessageAsync(json);
+            _logger.LogInformation("Enqueued change message for room {room} sub {sub}", room, n.SubscriptionId);
         }
 
         // Respond quickly to avoid retries
