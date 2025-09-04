@@ -39,8 +39,21 @@ public class DeltaWorkerFunction
     [Function("DeltaWorker")]
     public async Task RunAsync([QueueTrigger("%Webhook:NotificationQueue%", Connection = "AzureWebJobsStorage")] string message)
     {
-        var msg = JsonSerializer.Deserialize<ChangeMessage>(message);
-        if (msg is null) return;
+        _logger.LogInformation("DeltaWorker received raw message: {raw}", message);
+        ChangeMessage? msg = null;
+        try
+        {
+            msg = JsonSerializer.Deserialize<ChangeMessage>(message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deserialize queue message");
+        }
+        if (msg is null)
+        {
+            _logger.LogWarning("Message skipped (null after deserialization)");
+            return;
+        }
 
         var room = msg.RoomUpn;
         _logger.LogInformation("Processing change for room: {room}", room);
@@ -70,8 +83,10 @@ public class DeltaWorkerFunction
             });
         }
 
-        while (page is not null)
+        var loopGuard = 0;
+        while (page is not null && loopGuard < 20)
         {
+            loopGuard++;
             var events = page.Value ?? new List<Event>();
             foreach (var ev in events)
             {
@@ -87,6 +102,7 @@ public class DeltaWorkerFunction
             {
                 if (!string.IsNullOrEmpty(page.OdataDeltaLink))
                     await _state.SetDeltaLinkAsync(room, page.OdataDeltaLink);
+                _logger.LogInformation("No next link. DeltaLink captured? {hasDelta}", !string.IsNullOrEmpty(page.OdataDeltaLink));
                 break;
             }
         }

@@ -41,9 +41,10 @@ public class TriggerDeltaFunction
         }
         var client = new QueueClient(storage, queueName);
         await client.CreateIfNotExistsAsync();
-        var payload = JsonSerializer.Serialize(new ChangeMessage(room));
-        await client.SendMessageAsync(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(payload)));
-        _logger.LogInformation("Manual delta trigger enqueued for {room}", room);
+    var payload = JsonSerializer.Serialize(new ChangeMessage(room));
+    // NOTE: QueueClient handles base64 encoding internally. Send plain JSON string.
+    await client.SendMessageAsync(payload);
+    _logger.LogInformation("Manual delta trigger enqueued for {room}. Payload: {payload}", room, payload);
         var ok = req.CreateResponse(HttpStatusCode.Accepted);
         await ok.WriteStringAsync($"Enqueued delta trigger for {room}");
         return ok;
