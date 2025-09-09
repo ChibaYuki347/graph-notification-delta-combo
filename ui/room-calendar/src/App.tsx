@@ -1,225 +1,328 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { format, addHours, isSameDay, parseISO } from 'date-fns';
+import { format, startOfWeek, addDays, isToday, startOfHour, addHours } from 'date-fns';
+import { ja } from 'date-fns/locale';
 import './App.css';
-
-interface Room {
-  upn: string;
-  name: string;
-  capacity: number;
-  floor: string;
-}
 
 interface Event {
   id: string;
   subject: string;
-  start: string;
-  end: string;
-  organizer: string;
-  organizerEmail: string;
-  visitorId?: string;
-  hasVisitor: boolean;
-  isCancelled: boolean;
-  attendeeCount: number;
-}
-
-interface RoomEventsResponse {
-  room: string;
-  eventCount: number;
-  events: Event[];
-  responseTimeMs: number;
-  timestamp: string;
-  performance: {
-    cacheHit: boolean;
-    responseTimeMs: number;
-    target: string;
-    status: string;
+  start: {
+    dateTime: string;
+    timeZone: string;
+  };
+  end: {
+    dateTime: string;
+    timeZone: string;
+  };
+  room?: string; // 追加: どの会議室のイベントか
+  organizer: {
+    emailAddress: {
+      name: string;
+      address: string;
+    };
+  };
+  attendees?: Array<{
+    emailAddress: {
+      name: string;
+      address: string;
+    };
+    status: {
+      response: string;
+      time: string;
+    };
+  }>;
+  isVisitorMeeting?: boolean;
+  visitorInfo?: {
+    hasVisitor: boolean;
+    extractedNames: string[];
+    confidence: number;
   };
 }
 
-const API_BASE_URL = 'http://localhost:7071/api/api';
+interface PerformanceStats {
+  responseTime: number;
+  requestCount: number;
+  averageResponseTime: number;
+  p95ResponseTime: number;
+}
+
+// API ベースURL (環境変数 or デフォルト)
+const API_BASE = (process.env.REACT_APP_FUNCTION_BASE_URL || 'http://localhost:7071');
 
 function App() {
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [roomEvents, setRoomEvents] = useState<Record<string, Event[]>>({});
-  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [performanceData, setPerformanceData] = useState<Record<string, any>>({});
-  const [refreshCount, setRefreshCount] = useState(0);
+  const [viewMode, setViewMode] = useState<'day' | 'week'>('week');
+  const [performanceStats, setPerformanceStats] = useState<PerformanceStats>({
+    responseTime: 0,
+    requestCount: 0,
+    averageResponseTime: 0,
+    p95ResponseTime: 0
+  });
 
-  // 時間軸（9:00 - 22:00）
-  const timeSlots = Array.from({ length: 14 }, (_, i) => addHours(new Date().setHours(9, 0, 0, 0), i));
+  // 選択可能な会議室一覧 (16室)
+  const allRooms = React.useMemo(() => Array.from({length:16}, (_,i)=>`ConfRoom${i+1}@bbslooklab.onmicrosoft.com`), []);
+  const [selectedRooms, setSelectedRooms] = useState<string[]>([allRooms[0]]);
 
-  useEffect(() => {
-    loadData();
-  }, [refreshCount]);
+  // 部屋ごとのカラー (循環)
+  const colors = React.useMemo(()=>[
+    '#0984e3','#6c5ce7','#00b894','#e17055','#fd79a8',
+    '#00cec9','#e84393','#2d3436','#74b9ff','#a29bfe',
+    '#55efc4','#fab1a0','#ff7675','#ffeaa7','#81ecec','#b2bec3'
+  ], []);
+  const colorMap = React.useMemo(() => new Map(allRooms.map((r,i)=>[r, colors[i % colors.length]])), [allRooms, colors]);
 
-  const loadData = async () => {
-    setLoading(true);
+  const fetchEventsForRoom = async (roomUpn: string): Promise<Event[]> => {
+    const response = await axios.get(`${API_BASE}/api/rooms/${encodeURIComponent(roomUpn)}/events`);
+    const data = response.data;
+    const sourceArray: any[] = Array.isArray(data) ? data : (Array.isArray(data?.events) ? data.events : []);
+    const mapped: Event[] = sourceArray.map((e: any) => {
+      const startIso = e.start?.dateTime || e.start || e.startDateTime || e.Start || e.startISO;
+      const endIso = e.end?.dateTime || e.end || e.endDateTime || e.End || e.endISO;
+      const organizerName = e.organizer?.emailAddress?.name || e.organizer || e.organizerName || 'Unknown';
+      const organizerEmail = e.organizer?.emailAddress?.address || e.organizerEmail || 'unknown@example.com';
+      return {
+        id: e.id || e.eventId || crypto.randomUUID(),
+        subject: e.subject || '(no subject)',
+        start: { dateTime: startIso, timeZone: 'Asia/Tokyo' },
+        end: { dateTime: endIso, timeZone: 'Asia/Tokyo' },
+        organizer: { emailAddress: { name: organizerName, address: organizerEmail } },
+        attendees: e.attendees || [],
+        isVisitorMeeting: !!e.hasVisitor || !!e.visitorId,
+        visitorInfo: e.visitorId ? { hasVisitor: true, extractedNames: [e.visitorId], confidence: 1 } : undefined,
+        room: roomUpn
+      };
+    }).filter(ev => ev.start?.dateTime && ev.end?.dateTime);
+    return mapped;
+  };
+
+  const fetchEvents = React.useCallback(async () => {
     const startTime = Date.now();
+    setLoading(true);
+    setError(null);
 
     try {
-      // 会議室一覧を取得
-      const roomsResponse = await axios.get(`${API_BASE_URL}/rooms`);
-      const roomsData = roomsResponse.data.rooms;
-      setRooms(roomsData);
+      // 選択された複数会議室を並列取得
+      const all = await Promise.all(selectedRooms.map(r => fetchEventsForRoom(r)));
+      const merged = all.flat();
+      console.log(`Merged events: ${merged.length}`);
+      setEvents(merged);
 
-      // 各会議室のイベントを並列取得
-      const eventPromises = roomsData.map(async (room: Room) => {
-        try {
-          const response = await axios.get(`${API_BASE_URL}/rooms/${encodeURIComponent(room.upn)}/events`);
-          const data: RoomEventsResponse = response.data;
-          
-          setPerformanceData(prev => ({
-            ...prev,
-            [room.upn]: data.performance
-          }));
+      const responseTime = Date.now() - startTime;
 
-          return { roomUpn: room.upn, events: data.events };
-        } catch (error) {
-          console.error(`Failed to load events for room ${room.upn}:`, error);
-          return { roomUpn: room.upn, events: [] };
-        }
+      // パフォーマンス統計更新
+      setPerformanceStats(prev => {
+        const newRequestCount = prev.requestCount + 1;
+        const newAverageResponseTime = (prev.averageResponseTime * prev.requestCount + responseTime) / newRequestCount;
+        const newP95ResponseTime = Math.max(prev.p95ResponseTime, responseTime);
+        return {
+          responseTime,
+          requestCount: newRequestCount,
+          averageResponseTime: newAverageResponseTime,
+          p95ResponseTime: newP95ResponseTime
+        };
       });
-
-      const eventResults = await Promise.all(eventPromises);
-      const eventsMap = eventResults.reduce((acc, { roomUpn, events }) => {
-        acc[roomUpn] = events;
-        return acc;
-      }, {} as Record<string, Event[]>);
-
-      setRoomEvents(eventsMap);
-
-      const totalTime = Date.now() - startTime;
-      console.log(`Total data load time: ${totalTime}ms`);
-
-    } catch (error) {
-      console.error('Failed to load data:', error);
+    } catch (err) {
+      console.error('API Error:', err);
+      setError(err instanceof Error ? err.message : 'エラーが発生しました');
+      setEvents([]);
     } finally {
       setLoading(false);
     }
+  }, [selectedRooms]);
+
+  useEffect(() => {
+    fetchEvents();
+    const interval = setInterval(fetchEvents, 30000); // 30秒ごとに更新
+    return () => clearInterval(interval);
+  }, [fetchEvents]);
+
+  const getWeekDays = (date: Date) => {
+    const start = startOfWeek(date, { weekStartsOn: 1 }); // 月曜日から開始
+    return Array.from({ length: 5 }, (_, i) => addDays(start, i)); // 平日のみ
   };
 
-  const getEventForTimeSlot = (roomUpn: string, timeSlot: Date): Event | null => {
-    const events = roomEvents[roomUpn] || [];
-    return events.find(event => {
-      const eventStart = parseISO(event.start);
-      const eventEnd = parseISO(event.end);
-      return timeSlot >= eventStart && timeSlot < eventEnd && isSameDay(eventStart, selectedDate);
-    }) || null;
+  const getEventsForDateAndHour = (date: Date, hour: number) => {
+    const targetDateTime = addHours(startOfHour(date), hour);
+    // eventsが配列でない場合は空配列を返す
+    if (!Array.isArray(events)) {
+      return [];
+    }
+    return events.filter(event => {
+      const eventStart = new Date(event.start.dateTime);
+      const eventEnd = new Date(event.end.dateTime);
+      return eventStart <= targetDateTime && eventEnd > targetDateTime;
+    });
   };
 
-  const getPerformanceStatus = () => {
-    const allPerf = Object.values(performanceData);
-    if (allPerf.length === 0) return null;
-
-    const avgResponseTime = allPerf.reduce((sum: number, perf: any) => sum + perf.responseTimeMs, 0) / allPerf.length;
-    const slowCount = allPerf.filter((perf: any) => perf.status === 'SLOW').length;
-
-    return {
-      avgResponseTime,
-      slowCount,
-      totalRequests: allPerf.length,
-      status: avgResponseTime <= 10000 ? 'OK' : 'SLOW'
-    };
+  const formatEventTime = (event: Event) => {
+    const start = new Date(event.start.dateTime);
+    const end = new Date(event.end.dateTime);
+    return `${format(start, 'HH:mm')} - ${format(end, 'HH:mm')}`;
   };
 
-  const perfStatus = getPerformanceStatus();
-
-  if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="loading-spinner"></div>
-        <div>会議室データを読み込み中...</div>
-      </div>
-    );
-  }
+  const weekDays = viewMode === 'week' ? getWeekDays(selectedDate) : [selectedDate];
+  const timeSlots = Array.from({ length: 10 }, (_, i) => i + 9); // 9:00 - 18:00
 
   return (
     <div className="App">
       <header className="app-header">
-        <h1>🏢 ResourceLook - 会議室予約状況</h1>
-        <div className="header-controls">
-          <input
-            type="date"
-            value={format(selectedDate, 'yyyy-MM-dd')}
-            onChange={(e) => setSelectedDate(parseISO(e.target.value))}
-            className="date-picker"
-          />
-          <button onClick={() => setRefreshCount(c => c + 1)} className="refresh-btn">
-            🔄 更新
+        <h1>会議室カレンダー (複数選択対応)</h1>
+        <div style={{display:'flex',flexWrap:'wrap',gap:'0.5rem',justifyContent:'center',maxWidth:900,margin:'0 auto 1rem'}}>
+          {allRooms.map(r => {
+            const active = selectedRooms.includes(r);
+            return (
+              <button key={r}
+                style={{
+                  background: active? (colorMap.get(r)||'#0984e3') : '#fff',
+                  color: active? '#fff':'#333',
+                  border: `2px solid ${colorMap.get(r)}`,
+                  padding:'0.35rem 0.6rem',
+                  borderRadius: '20px',
+                  fontSize:'0.75rem',
+                  cursor:'pointer',
+                  fontWeight:600,
+                  boxShadow: active? '0 2px 6px rgba(0,0,0,0.2)':'none'
+                }}
+                onClick={()=> setSelectedRooms(prev => prev.includes(r) ? prev.filter(x=>x!==r) : [...prev, r])}
+              >{r.replace('@bbslooklab.onmicrosoft.com','')}</button>
+            );
+          })}
+          <button style={{
+            background:'#222',color:'#fff',border:'2px solid #222',borderRadius:'20px',padding:'0.35rem 0.6rem',fontSize:'0.75rem',cursor:'pointer'
+          }} onClick={()=> setSelectedRooms(allRooms)}>全選択</button>
+          <button style={{
+            background:'#999',color:'#fff',border:'2px solid #999',borderRadius:'20px',padding:'0.35rem 0.6rem',fontSize:'0.75rem',cursor:'pointer'
+          }} onClick={()=> setSelectedRooms([allRooms[0]])}>リセット</button>
+        </div>
+        
+        {/* パフォーマンス統計 */}
+        <div className="performance-stats">
+          <div className="stat-item">
+            <span className="stat-label">応答時間:</span>
+            <span className={`stat-value ${performanceStats.responseTime > 10000 ? 'warning' : 'success'}`}>
+              {performanceStats.responseTime}ms
+            </span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">平均応答時間:</span>
+            <span className={`stat-value ${performanceStats.averageResponseTime > 10000 ? 'warning' : 'success'}`}>
+              {Math.round(performanceStats.averageResponseTime)}ms
+            </span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">P95応答時間:</span>
+            <span className={`stat-value ${performanceStats.p95ResponseTime > 10000 ? 'warning' : 'success'}`}>
+              {performanceStats.p95ResponseTime}ms
+            </span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">リクエスト数:</span>
+            <span className="stat-value">{performanceStats.requestCount}</span>
+          </div>
+        </div>
+
+        {/* ビューモード選択 */}
+        <div className="view-mode-selector">
+          <button 
+            className={viewMode === 'day' ? 'active' : ''}
+            onClick={() => setViewMode('day')}
+          >
+            日表示
+          </button>
+          <button 
+            className={viewMode === 'week' ? 'active' : ''}
+            onClick={() => setViewMode('week')}
+          >
+            週表示
           </button>
         </div>
+
+        {/* 日付ナビゲーション */}
+        <div className="date-navigation">
+          <button onClick={() => setSelectedDate(new Date(selectedDate.getTime() - (viewMode === 'week' ? 7 : 1) * 24 * 60 * 60 * 1000))}>
+            ← 前の{viewMode === 'week' ? '週' : '日'}
+          </button>
+          <span className="current-date">
+            {viewMode === 'week' 
+              ? `${format(weekDays[0], 'yyyy年MM月dd日', { locale: ja })} - ${format(weekDays[4], 'MM月dd日', { locale: ja })}`
+              : format(selectedDate, 'yyyy年MM月dd日（eee）', { locale: ja })
+            }
+          </span>
+          <button onClick={() => setSelectedDate(new Date(selectedDate.getTime() + (viewMode === 'week' ? 7 : 1) * 24 * 60 * 60 * 1000))}>
+            次の{viewMode === 'week' ? '週' : '日'} →
+          </button>
+        </div>
+
+        <button onClick={fetchEvents} disabled={loading} className="refresh-button">
+          {loading ? '読み込み中...' : '更新'}
+        </button>
       </header>
 
-      {perfStatus && (
-        <div className={`performance-bar ${perfStatus.status.toLowerCase()}`}>
-          <span>📊 レスポンス性能: 平均{Math.round(perfStatus.avgResponseTime)}ms</span>
-          <span>🎯 目標: P95 ≤ 10秒</span>
-          <span>📈 ステータス: {perfStatus.status}</span>
-          {perfStatus.slowCount > 0 && (
-            <span className="warning">⚠️ {perfStatus.slowCount}件のスロークエリ</span>
-          )}
+      {error && (
+        <div className="error-message">
+          エラー: {error}
         </div>
       )}
 
-      <div className="calendar-container">
-        <div className="time-column">
+      <main className="calendar-container">
+        <div className={`calendar-grid ${viewMode}`}>
+          {/* ヘッダー行 */}
           <div className="time-header">時間</div>
-          {timeSlots.map(time => (
-            <div key={time.toString()} className="time-slot">
-              {format(time, 'HH:mm')}
+          {weekDays.map(day => (
+            <div key={day.toISOString()} className={`date-header ${isToday(day) ? 'today' : ''}`}>
+              <div className="date-day">{format(day, 'eee', { locale: ja })}</div>
+              <div className="date-number">{format(day, 'dd')}</div>
             </div>
           ))}
-        </div>
 
-        {rooms.map(room => (
-          <div key={room.upn} className="room-column">
-            <div className="room-header">
-              <div className="room-name">{room.name}</div>
-              <div className="room-details">
-                <span className="capacity">👥 {room.capacity}名</span>
-                <span className="floor">🏢 {room.floor}</span>
+          {/* カレンダーボディ */}
+          {timeSlots.map(hour => (
+            <React.Fragment key={hour}>
+              <div className="time-slot">
+                {hour}:00
               </div>
-              {performanceData[room.upn] && (
-                <div className={`perf-indicator ${performanceData[room.upn].status.toLowerCase()}`}>
-                  {Math.round(performanceData[room.upn].responseTimeMs)}ms
-                </div>
-              )}
-            </div>
-            
-            {timeSlots.map(timeSlot => {
-              const event = getEventForTimeSlot(room.upn, timeSlot);
-              return (
-                <div key={timeSlot.toString()} className="time-slot">
-                  {event ? (
-                    <div className={`event ${event.hasVisitor ? 'visitor-event' : 'normal-event'} ${event.isCancelled ? 'cancelled' : ''}`}>
-                      <div className="event-subject">{event.subject}</div>
-                      <div className="event-organizer">{event.organizer}</div>
-                      {event.hasVisitor && (
-                        <div className="visitor-badge">
-                          👤 来客: {event.visitorId?.substring(0, 8)}...
+              {weekDays.map(day => {
+                const dayEvents = getEventsForDateAndHour(day, hour);
+                return (
+                  <div key={`${day.toISOString()}-${hour}`} className="calendar-cell">
+                    {Array.isArray(dayEvents) && dayEvents.map(event => (
+                      <div key={event.id+event.room} className="event-card" style={{
+                        background: `linear-gradient(135deg, ${(colorMap.get(event.room||''))} 0%, #222 100%)`,
+                        borderLeftColor: colorMap.get(event.room||'')
+                      }}>
+                        <div className="event-time-badge">
+                          {formatEventTime(event)}
                         </div>
-                      )}
-                      <div className="event-time">
-                        {format(parseISO(event.start), 'HH:mm')} - {format(parseISO(event.end), 'HH:mm')}
+                        <div className="event-subject">
+                          {event.subject}
+                        </div>
+                        <div style={{fontSize:'0.6rem',opacity:0.9,marginBottom:'0.2rem'}}>{event.room?.split('@')[0]}</div>
+                        <div className="event-organizer">
+                          主催者: {event.organizer.emailAddress.name || event.organizer.emailAddress.address}
+                        </div>
+                        {event.visitorInfo?.hasVisitor && (
+                          <div className="visitor-badge">
+                            👥 訪問者: {event.visitorInfo.extractedNames.join(', ')}
+                          </div>
+                        )}
+                        {event.attendees && event.attendees.length > 0 && (
+                          <div className="attendees-count">
+                            参加者: {event.attendees.length}名
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ) : (
-                    <div className="empty-slot">空き</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-
-      <footer className="app-footer">
-        <div>📅 {format(selectedDate, 'yyyy年MM月dd日 (E)', { locale: undefined })}</div>
-        <div>🔄 最終更新: {new Date().toLocaleTimeString()}</div>
-        <div>⚡ PoC: Graph API Change Notifications + Delta Queries</div>
-      </footer>
+                    ))}
+                  </div>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+      </main>
     </div>
   );
 }
