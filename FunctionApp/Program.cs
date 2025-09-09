@@ -41,7 +41,11 @@ var host = new HostBuilder()
         var cacheContainer = cfg["Blob:CacheContainer"] ?? "cache";
 
         services.AddSingleton<IStateStore>(sp => new BlobStateStore(blobConn!, stateContainer));
-        services.AddSingleton<IEventCacheStore>(sp => new BlobEventCacheStore(blobConn!, cacheContainer));
+        services.AddSingleton<IEventCacheStore>(sp => 
+        {
+            var logger = sp.GetRequiredService<ILogger<BlobEventCacheStore>>();
+            return new BlobEventCacheStore(blobConn!, cacheContainer, logger);
+        });
         services.AddSingleton<VisitorIdExtractor>();
 
         // Options
