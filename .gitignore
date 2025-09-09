@@ -13,6 +13,7 @@ FunctionApp/local.settings.json
 
 # Azurite local data
 .azurite/
+azurite/
 
 # macOS
 .DS_Store
