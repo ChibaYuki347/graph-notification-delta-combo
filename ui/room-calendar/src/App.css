@@ -18,6 +18,25 @@
   text-align: center;
 }
 
+/* バルク作成ツール */
+.bulk-details {
+  background:#ffffff;
+  border:1px solid rgba(255,255,255,0.25);
+  color:#222; /* 内部テキストはダーク */
+}
+.bulk-details[open] {
+  box-shadow:0 2px 8px rgba(0,0,0,0.15);
+}
+.bulk-details summary { list-style:none; }
+.bulk-details summary::-webkit-details-marker { display:none; }
+.bulk-content input[type="number"] {
+  padding:0.25rem 0.4rem; border:1px solid #ccc; border-radius:4px; font-size:0.8rem; background:#fff; color:#222;
+}
+.checkbox-inline { display:flex; align-items:center; gap:0.35rem; font-size:0.7rem; font-weight:600; cursor:pointer; background:#eef2f7; padding:0.35rem 0.55rem; border-radius:6px; border:1px solid #d0d7e2; }
+.checkbox-inline input { width:16px; height:16px; accent-color:#0d6efd; }
+.checkbox-inline span { white-space:nowrap; }
+.checkbox-wrap { display:flex; align-items:flex-end; }
+
 /* パフォーマンス統計 */
 .performance-stats {
   display: flex;

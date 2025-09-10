@@ -204,9 +204,9 @@ function App() {
     <div className="App">
       <header className="app-header">
         <h1>会議室カレンダー (複数選択対応)</h1>
-        <details style={{margin:'0.5rem auto',maxWidth:900,background:'#f8f9fa',padding:'0.75rem 1rem',borderRadius:8}}>
+        <details className="bulk-details" style={{margin:'0.5rem auto',maxWidth:900,padding:'0.75rem 1rem',borderRadius:8}}>
           <summary style={{cursor:'pointer',fontWeight:600}}>バルク会議作成ツール (PoC)</summary>
-          <div style={{display:'flex',flexWrap:'wrap',gap:'0.75rem',marginTop:'0.75rem',alignItems:'flex-end'}}>
+          <div className="bulk-content" style={{display:'flex',flexWrap:'wrap',gap:'0.75rem',marginTop:'0.75rem',alignItems:'flex-end'}}>
             <div>
               <label style={{fontSize:'0.7rem',fontWeight:600,display:'block'}}>対象会議室数</label>
               <span style={{fontSize:'0.85rem'}}>{selectedRooms.length} 室</span>
@@ -215,13 +215,17 @@ function App() {
               <label style={{fontSize:'0.7rem',fontWeight:600,display:'block'}}>件数/室</label>
               <input type="number" min={1} max={50} value={bulkCount} onChange={e=>setBulkCount(parseInt(e.target.value||'1'))} style={{width:80}} />
             </div>
-            <div>
-              <label style={{fontSize:'0.7rem',fontWeight:600,display:'block'}}>VisitorID</label>
-              <input type="checkbox" checked={bulkVisitors} onChange={e=>setBulkVisitors(e.target.checked)} />
+            <div className="checkbox-wrap">
+              <label className="checkbox-inline" title="VisitorID を件名へ付与 (訪問者会議テスト用)">
+                <input type="checkbox" checked={bulkVisitors} onChange={e=>setBulkVisitors(e.target.checked)} />
+                <span>VisitorID付与</span>
+              </label>
             </div>
-            <div>
-              <label style={{fontSize:'0.7rem',fontWeight:600,display:'block'}}>skipCache</label>
-              <input type="checkbox" checked={bulkSkipCache} onChange={e=>setBulkSkipCache(e.target.checked)} />
+            <div className="checkbox-wrap">
+              <label className="checkbox-inline" title="skipCache=true で Webhook→Delta→Cache の遅延計測 (キャッシュ即時書込を抑止)">
+                <input type="checkbox" checked={bulkSkipCache} onChange={e=>setBulkSkipCache(e.target.checked)} />
+                <span>skipCache(計測)</span>
+              </label>
             </div>
             <div>
               <button disabled={bulkLoading || selectedRooms.length===0} onClick={async ()=>{
@@ -243,8 +247,8 @@ function App() {
               </button>
             </div>
             {bulkMessage && <div style={{fontSize:'0.7rem',color:'#333'}}>{bulkMessage}</div>}
-            <div style={{flexBasis:'100%',fontSize:'0.6rem',opacity:0.8}}>
-              skipCache=true: Webhook→Delta→Cache の遅延計測用。false: UI 即時反映。
+            <div style={{flexBasis:'100%',fontSize:'0.6rem',opacity:0.85,lineHeight:1.4}}>
+              <strong>説明:</strong> VisitorID付与=訪問者シナリオ。skipCache(計測)=キャッシュ直書きを行わず処理パイプライン遅延を観測。未チェック時は作成後すぐ UI へ反映。
             </div>
           </div>
         </details>
