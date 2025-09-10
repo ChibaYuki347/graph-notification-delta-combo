@@ -21,7 +21,7 @@ namespace FunctionApp.Functions
 
         [Function("RealtimeEvents")]
         public async Task<HttpResponseData> Run(
-            [HttpTrigger(AuthorizationLevel.Function, "get")] HttpRequestData req,
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get")] HttpRequestData req,
             FunctionContext executionContext)
         {
             try

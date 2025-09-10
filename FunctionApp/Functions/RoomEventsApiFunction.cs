@@ -185,13 +185,19 @@ public class RoomEventsApiFunction
         try
         {
             // 設定から会議室一覧を取得（本来はGraphAPIから取得）
-            var rooms = new[]
-            {
-                new { upn = "ConfRoom1@bbslooklab.onmicrosoft.com", name = "Conference Room 1", capacity = 10, floor = "1F" },
-                new { upn = "ConfRoom2@bbslooklab.onmicrosoft.com", name = "Conference Room 2", capacity = 8, floor = "1F" },
-                new { upn = "リソース02@bbslooklab.onmicrosoft.com", name = "リソース02", capacity = 6, floor = "2F" },
-                new { upn = "リソース03@bbslooklab.onmicrosoft.com", name = "リソース03", capacity = 4, floor = "2F" }
-            };
+            // ConfRoom1～16 を仮定 + 既存サンプル
+            var rooms = Enumerable.Range(1,16)
+                .Select(i => new { 
+                    upn = $"ConfRoom{i}@bbslooklab.onmicrosoft.com", 
+                    name = $"Conference Room {i}", 
+                    capacity = i % 5 switch {0=>20,1=>10,2=>8,3=>6,_=>12},
+                    floor = ( (i-1)/4 + 1) + "F" 
+                })
+                .Concat(new[]{
+                    new { upn = "リソース02@bbslooklab.onmicrosoft.com", name = "リソース02", capacity = 6, floor = "2F" },
+                    new { upn = "リソース03@bbslooklab.onmicrosoft.com", name = "リソース03", capacity = 4, floor = "2F" }
+                })
+                .ToList();
 
             var responseTime = DateTime.UtcNow - startTime;
             
