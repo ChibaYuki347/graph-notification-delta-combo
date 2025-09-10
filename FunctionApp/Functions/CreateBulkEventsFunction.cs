@@ -52,6 +52,7 @@ namespace FunctionApp.Functions
                 var endHour = int.Parse(queryParams.GetValueOrDefault("endHour", "18"));
                 var targetDate = DateTime.Parse(queryParams.GetValueOrDefault("date", DateTime.Today.ToString("yyyy-MM-dd")));
                 var withVisitors = bool.Parse(queryParams.GetValueOrDefault("withVisitors", "true"));
+                var skipCache = bool.Parse(queryParams.GetValueOrDefault("skipCache", "false"));
 
                 if (!roomUpns.Any())
                 {
@@ -157,8 +158,8 @@ namespace FunctionApp.Functions
                             // Graph APIで会議室ベースで会議作成
                             var createdEvent = await _graphClient.Users[roomUpn].Events.PostAsync(graphEvent);
 
-                            // キャッシュ保存 (SSE/一覧API 即時反映用)
-                            if (createdEvent != null)
+                            // キャッシュ保存 (skipCache 指定時はパイプライン経由の遅延測定用に抑止)
+                            if (createdEvent != null && !skipCache)
                             {
                                 try
                                 {
@@ -182,7 +183,8 @@ namespace FunctionApp.Functions
                                 room = roomUpn,
                                 visitorId = visitorId,
                                 hasVisitor = visitorId != null,
-                                creationTimeMs = eventDuration
+                                creationTimeMs = eventDuration,
+                                cached = !skipCache
                             });
 
                             _logger.LogInformation($"会議作成完了: {subject} ({roomUpn}) - {eventDuration:F1}ms");
@@ -262,7 +264,8 @@ namespace FunctionApp.Functions
                         averageTimePerRoomMs = totalDuration / roomUpns.Length,
                         targetDate = targetDate.ToString("yyyy-MM-dd"),
                         timeRange = $"{startHour:D2}:00 - {endHour:D2}:00",
-                        withVisitorsEnabled = withVisitors
+                        withVisitorsEnabled = withVisitors,
+                        skipCache
                     },
                     performanceMetrics = new
                     {
