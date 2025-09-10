@@ -1,0 +1,2 @@
+parameters.*.local.json
+*.secrets.json

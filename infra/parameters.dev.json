@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": { "value": "dev" },
+    "graphTenantId": { "value": "<your-tenant-guid>" },
+    "graphClientId": { "value": "<your-app-client-id>" },
+    "graphClientSecret": { "value": "<your-app-client-secret>" },
+    "webhookClientState": { "value": "<random-long-string>" },
+    "roomsUpns": { "value": "ConfRoom1@tenant.onmicrosoft.com,ConfRoom2@tenant.onmicrosoft.com" },
+    "windowDaysPast": { "value": 3 },
+    "windowDaysFuture": { "value": 14 },
+    "renewCron": { "value": "0 0 */6 * * *" },
+    "enableKeyVault": { "value": true },
+    "keyVaultName": { "value": "" }
+  }
+}

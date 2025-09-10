@@ -28,6 +28,8 @@
 | windowDaysPast | 取得対象過去日数 | 3 |
 | windowDaysFuture | 取得対象未来日数 | 14 |
 | renewCron | サブスクリプション更新 CRON | `0 0 */6 * * *` |
+| enableKeyVault | Key Vault でシークレット参照 (true 推奨) | true |
+| keyVaultName | 省略時は自動命名 | '' |
 
 ## デプロイ手順 (例)
 
@@ -50,6 +52,10 @@ az deployment group create \
   -f infra/main.bicep \
   -p graphTenantId=$TENANT_ID graphClientId=$CLIENT_ID graphClientSecret=$CLIENT_SECRET \
      webhookClientState=$CLIENT_STATE roomsUpns="$ROOMS" environment=dev
+
+# もしくはパラメータファイル + スクリプト
+chmod +x infra/deploy.sh
+./infra/deploy.sh $RG $LOCATION infra/parameters.dev.json
 ```
 
 ## デプロイ後
@@ -58,6 +64,22 @@ az deployment group create \
 2. ローカル `REACT_APP_FUNCTION_BASE_URL` をその URL に変更 (フロントエンド再ビルド)。
 3. Graph Webhook を Azure 上の Function URL で再登録 (PoC の場合 ngrok -> Azure に切替)。
 4. 動作確認: `/api/rooms/{roomUPN}/events` が 200 を返すこと。
+
+## Key Vault 利用について
+
+`enableKeyVault=true` の場合:
+
+1. Key Vault (RBAC) を作成 (accessPolicies なし / enableRbacAuthorization=true)
+2. 2 つのシークレット `Graph--ClientSecret`, `Webhook--ClientState` を投入
+3. Function App のアプリ設定で `@Microsoft.KeyVault(SecretUri=...)` 参照を設定
+4. Function のシステム割当マネージドIDに "Key Vault Secrets User" ロールを付与
+
+注意:
+
+- テンプレート出力で Secret URI は返却していません (セキュリティ簡素化)。必要なら別途 `az keyvault secret show` で取得。
+- 将来的にローテーションを行う場合は Key Vault のバージョン管理で対応可能。
+
+`enableKeyVault=false` の場合: 平文で Function App 設定に格納 (PoC/検証向け)。
 
 ## 今後の拡張候補
 
