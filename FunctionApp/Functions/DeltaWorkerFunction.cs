@@ -75,7 +75,8 @@ public class DeltaWorkerFunction
             }
 
             var room = msg.RoomUpn;
-            _logger.LogInformation("Processing change for room: {room}", room);
+            var queueDelayMs = msg.ReceivedAtUtc > DateTime.MinValue ? (DateTime.UtcNow - msg.ReceivedAtUtc).TotalMilliseconds : (double?)null;
+            _logger.LogInformation("METRIC delta_start room={room} sub={sub} queueDelayMs={delay} recvTs={recv:o}", room, msg.SubscriptionId, queueDelayMs, msg.ReceivedAtUtc);
 
             var deltaLink = await _state.GetDeltaLinkAsync(room);
             DeltaGetResponse? page;
@@ -131,6 +132,14 @@ public class DeltaWorkerFunction
                             ev.Subject, visitorId ?? "None", bodyPreview);
                         
                         await _cache.UpsertAsync(room, ev, visitorId);
+
+                        // イベント作成→現在までの取り込み遅延 (Graphイベントの CreatedDateTime 利用)
+                        double? ingestLatencyMs = null;
+                        if (ev.CreatedDateTime != null)
+                        {
+                            ingestLatencyMs = (DateTimeOffset.UtcNow - ev.CreatedDateTime.Value).TotalMilliseconds;
+                        }
+                        _logger.LogInformation("METRIC event_cached room={room} eventId={eventId} ingestLatencyMs={ingest} hasVisitor={hasVisitor}", room, ev.Id, ingestLatencyMs, visitorId != null);
                     }
                     catch (Exception ex)
                     {
@@ -152,7 +161,7 @@ public class DeltaWorkerFunction
                 }
             }
 
-            _logger.LogInformation("Delta sync finished: {room}", room);
+            _logger.LogInformation("METRIC delta_finished room={room} queueTotalMs={total}", room, msg.ReceivedAtUtc > DateTime.MinValue ? (DateTime.UtcNow - msg.ReceivedAtUtc).TotalMilliseconds : null);
         }
         catch (Exception ex)
         {

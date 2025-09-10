@@ -90,11 +90,17 @@ public class NotificationsFunction
                 }
             }
 
-            var msg = new ChangeMessage(n.SubscriptionId, room, n.ChangeType, n.Resource);
+            var msg = new ChangeMessage(
+                n.SubscriptionId,
+                room,
+                n.ChangeType,
+                n.Resource,
+                DateTime.UtcNow
+            );
             var json = JsonSerializer.Serialize(msg);
             // NOTE: QueueClient handles base64 transparently; provide plain JSON
             await queue.SendMessageAsync(json);
-            _logger.LogInformation("Enqueued change message for room {room} sub {sub}", room, n.SubscriptionId);
+            _logger.LogInformation("METRIC enqueue room={room} sub={sub} ts={ts:o}", room, n.SubscriptionId, msg.ReceivedAtUtc);
         }
 
         // Respond quickly to avoid retries
