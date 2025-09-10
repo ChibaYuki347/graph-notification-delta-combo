@@ -70,6 +70,8 @@ function App() {
   const [bulkSkipCache, setBulkSkipCache] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  // バルク作成対象の会議室（表示用選択と独立）
+  const [bulkRooms, setBulkRooms] = useState<string[]>([]);
 
   // 選択可能な会議室一覧 (16室)
   const allRooms = React.useMemo(() => Array.from({length:16}, (_,i)=>`ConfRoom${i+1}@bbslooklab.onmicrosoft.com`), []);
@@ -209,7 +211,7 @@ function App() {
           <div className="bulk-content" style={{display:'flex',flexWrap:'wrap',gap:'0.75rem',marginTop:'0.75rem',alignItems:'flex-end'}}>
             <div>
               <label style={{fontSize:'0.7rem',fontWeight:600,display:'block'}}>対象会議室数</label>
-              <span style={{fontSize:'0.85rem'}}>{selectedRooms.length} 室</span>
+              <span style={{fontSize:'0.85rem'}}>{bulkRooms.length} 室</span>
             </div>
             <div>
               <label style={{fontSize:'0.7rem',fontWeight:600,display:'block'}}>件数/室</label>
@@ -227,13 +229,14 @@ function App() {
                 <span>skipCache(計測)</span>
               </label>
             </div>
-            <div>
+            <div style={{display:'flex',gap:'0.4rem'}}>
               <button disabled={bulkLoading || selectedRooms.length===0} onClick={async ()=>{
                 setBulkLoading(true);setBulkMessage(null);
                 try {
                   const today = new Date();
                   const dateStr = today.toISOString().slice(0,10);
-                  const roomsParam = selectedRooms.join(',');
+                  const targetRooms = (bulkRooms.length>0? bulkRooms : selectedRooms); // フォールバック互換
+                  const roomsParam = targetRooms.join(',');
                   const url = `${API_BASE}/api/CreateBulkEvents?rooms=${encodeURIComponent(roomsParam)}&countPerRoom=${bulkCount}&date=${dateStr}&withVisitors=${bulkVisitors}&skipCache=${bulkSkipCache}`;
                   const res = await axios.post(url, undefined, {timeout:60000});
                   setBulkMessage(`作成成功: total=${res.data?.summary?.totalEventsCreated ?? 'N/A'}`);
@@ -245,8 +248,27 @@ function App() {
               }} style={{padding:'0.55rem 1.1rem',background:'#0d6efd',color:'#fff',border:'none',borderRadius:6,fontWeight:600,cursor:'pointer'}}>
                 {bulkLoading? '作成中...' : 'バルク作成実行'}
               </button>
+              <button type="button" disabled={bulkLoading} onClick={()=> setBulkRooms(allRooms)} style={{padding:'0.4rem 0.8rem',background:'#222',color:'#fff',border:'none',borderRadius:6,fontSize:'0.65rem',cursor:'pointer'}}>全室</button>
+              <button type="button" disabled={bulkLoading} onClick={()=> setBulkRooms([])} style={{padding:'0.4rem 0.8rem',background:'#6c757d',color:'#fff',border:'none',borderRadius:6,fontSize:'0.65rem',cursor:'pointer'}}>解除</button>
             </div>
             {bulkMessage && <div style={{fontSize:'0.7rem',color:'#333'}}>{bulkMessage}</div>}
+            <div style={{flexBasis:'100%',display:'flex',flexWrap:'wrap',gap:'0.35rem',marginTop:'0.25rem',maxHeight:90,overflowY:'auto',padding:'0.25rem 0'}}>
+              {allRooms.map(r=>{
+                const active = bulkRooms.includes(r);
+                return (
+                  <span key={r} onClick={()=> setBulkRooms(prev=> prev.includes(r)? prev.filter(x=>x!==r): [...prev,r])} style={{
+                    background: active? (colorMap.get(r)||'#0d6efd') : '#eef2f7',
+                    color: active? '#fff':'#222',
+                    border: `1px solid ${active? (colorMap.get(r)||'#0d6efd'):'#d0d7e2'}`,
+                    padding:'0.25rem 0.5rem',
+                    fontSize:'0.55rem',
+                    fontWeight:600,
+                    borderRadius:14,
+                    cursor:'pointer'
+                  }}>{r.replace('@bbslooklab.onmicrosoft.com','')}</span>
+                );
+              })}
+            </div>
             <div style={{flexBasis:'100%',fontSize:'0.6rem',opacity:0.85,lineHeight:1.4}}>
               <strong>説明:</strong> VisitorID付与=訪問者シナリオ。skipCache(計測)=キャッシュ直書きを行わず処理パイプライン遅延を観測。未チェック時は作成後すぐ UI へ反映。
             </div>
