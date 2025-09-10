@@ -84,6 +84,8 @@ function App() {
     '#55efc4','#fab1a0','#ff7675','#ffeaa7','#81ecec','#b2bec3'
   ], []);
   const colorMap = React.useMemo(() => new Map(allRooms.map((r,i)=>[r, colors[i % colors.length]])), [allRooms, colors]);
+  // ルーム検索用
+  const [roomFilter, setRoomFilter] = useState("");
 
   const fetchEventsForRoom = async (roomUpn: string): Promise<Event[]> => {
     const response = await axios.get(`${API_BASE}/api/rooms/${encodeURIComponent(roomUpn)}/events`);
@@ -201,11 +203,50 @@ function App() {
 
   const weekDays = viewMode === 'week' ? getWeekDays(selectedDate) : [selectedDate];
   const timeSlots = Array.from({ length: 10 }, (_, i) => i + 9); // 9:00 - 18:00
+  // ルームごとのイベント件数
+  const roomEventCount = React.useMemo(()=>{
+    const map: Record<string, number> = {};
+    for(const ev of events){
+      if(!ev.room) continue; map[ev.room]=(map[ev.room]||0)+1;
+    }
+    return map;
+  },[events]);
 
   return (
     <div className="App">
       <header className="app-header">
         <h1>会議室カレンダー (複数選択対応)</h1>
+        <details style={{maxWidth:900,margin:'0 auto 0.75rem',background:'#ffffff',color:'#222',padding:'0.75rem 1rem',borderRadius:8}}>
+          <summary style={{cursor:'pointer',fontWeight:600}}>会議室選択・件数確認</summary>
+          <div style={{marginTop:'0.6rem',display:'flex',flexDirection:'column',gap:'0.6rem'}}>
+            <div style={{display:'flex',gap:'0.5rem',flexWrap:'wrap',alignItems:'center'}}>
+              <input placeholder="フィルタ (例: 3)" value={roomFilter} onChange={e=>setRoomFilter(e.target.value)} style={{padding:'0.35rem 0.6rem',fontSize:'0.8rem',border:'1px solid #ccc',borderRadius:4}} />
+              <button type="button" onClick={()=> setSelectedRooms(allRooms)} style={{padding:'0.35rem 0.7rem',fontSize:'0.65rem',border:'1px solid #222',background:'#222',color:'#fff',borderRadius:4,cursor:'pointer'}}>全選択</button>
+              <button type="button" onClick={()=> setSelectedRooms([allRooms[0]])} style={{padding:'0.35rem 0.7rem',fontSize:'0.65rem',border:'1px solid #999',background:'#999',color:'#fff',borderRadius:4,cursor:'pointer'}}>初期化</button>
+              <span style={{fontSize:'0.65rem',opacity:0.75}}>選択: {selectedRooms.length} / {allRooms.length}</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:'0.4rem',maxHeight:180,overflowY:'auto'}}>
+              {allRooms.filter(r=> r.toLowerCase().includes(roomFilter.toLowerCase())).map(r=>{
+                const active = selectedRooms.includes(r);
+                const count = roomEventCount[r]||0;
+                return (
+                  <label key={r} style={{
+                    display:'flex',alignItems:'center',gap:'0.4rem',
+                    background: active? (colorMap.get(r)||'#0d6efd'):'#eef2f7',
+                    color: active? '#fff':'#222',
+                    padding:'0.35rem 0.5rem',borderRadius:6,fontSize:'0.65rem',fontWeight:600,
+                    cursor:'pointer',border:`1px solid ${active? (colorMap.get(r)||'#0d6efd'):'#d0d7e2'}`
+                  }}>
+                    <input type="checkbox" checked={active} onChange={()=> setSelectedRooms(prev=> prev.includes(r)? prev.filter(x=>x!==r): [...prev,r])} style={{width:14,height:14,accentColor:colorMap.get(r)||'#0d6efd'}} />
+                    <span style={{flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.replace('@bbslooklab.onmicrosoft.com','')}</span>
+                    <span style={{fontSize:'0.55rem',background:'rgba(255,255,255,0.25)',padding:'0.1rem 0.3rem',borderRadius:4}}>{count}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{fontSize:'0.55rem',opacity:0.7,lineHeight:1.4}}>チェックで表示対象を切替。数値バッジは現在ロード済みイベント件数 (期間内)。</div>
+          </div>
+        </details>
         <details className="bulk-details" style={{margin:'0.5rem auto',maxWidth:900,padding:'0.75rem 1rem',borderRadius:8}}>
           <summary style={{cursor:'pointer',fontWeight:600}}>バルク会議作成ツール (PoC)</summary>
           <div className="bulk-content" style={{display:'flex',flexWrap:'wrap',gap:'0.75rem',marginTop:'0.75rem',alignItems:'flex-end'}}>
