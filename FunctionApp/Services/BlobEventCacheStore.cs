@@ -38,7 +38,8 @@ public class BlobEventCacheStore : IEventCacheStore
             visitorId,
             lastModified = ev.LastModifiedDateTime ?? DateTimeOffset.UtcNow,
             isCancelled = ev.IsCancelled ?? false,
-            created = ev.CreatedDateTime ?? DateTimeOffset.UtcNow
+            created = ev.CreatedDateTime ?? DateTimeOffset.UtcNow,
+            ingestedAtUtc = DateTime.UtcNow
         };
 
         await blob.UploadAsync(BinaryData.FromObjectAsJson(payload, new JsonSerializerOptions { WriteIndented = true }), overwrite: true);
