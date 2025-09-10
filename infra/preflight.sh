@@ -26,7 +26,7 @@ echo "[preflight] Bicep コンパイル検証" >&2
 if ! az bicep version >/dev/null 2>&1; then
   echo "bicep CLI が az に統合されていません。最新の Azure CLI へ更新を推奨" >&2
 else
-  az bicep build -f infra/main.bicep -o /tmp/main.json >/dev/null
+  az bicep build -f infra/main.bicep --outfile /tmp/main.json >/dev/null
   echo "  -> OK"
 fi
 
