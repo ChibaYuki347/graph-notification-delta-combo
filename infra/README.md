@@ -81,6 +81,34 @@ chmod +x infra/deploy.sh
 
 `enableKeyVault=false` の場合: 平文で Function App 設定に格納 (PoC/検証向け)。
 
+## Webhook 自動登録スクリプト
+
+`scripts/register-webhooks.sh` を利用するとローカル/CI から会議室サブスクリプションを一括作成できます。
+
+例:
+
+```bash
+chmod +x scripts/register-webhooks.sh
+./scripts/register-webhooks.sh \
+  --function-url https://<func-name>.azurewebsites.net \
+  --rooms "ConfRoom1@tenant.onmicrosoft.com,ConfRoom2@tenant.onmicrosoft.com" \
+  --tenant-id <tenant-guid> \
+  --client-id <app-client-id> \
+  --keyvault <kv-name>
+```
+
+Key Vault を使わず直接値を渡す場合:
+
+```bash
+./scripts/register-webhooks.sh \
+  --function-url https://<func-name>.azurewebsites.net \
+  --rooms "ConfRoom1@tenant.onmicrosoft.com" \
+  --tenant-id <tenant-guid> \
+  --client-id <app-client-id> \
+  --client-secret '<secret>' \
+  --client-state '<clientState>'
+```
+
 ## 今後の拡張候補
 
 - Key Vault + Managed Identity で Graph シークレット管理
