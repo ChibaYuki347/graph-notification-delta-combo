@@ -64,6 +64,12 @@ function App() {
     averageResponseTime: 0,
     p95ResponseTime: 0
   });
+  // バルク作成用フォーム状態
+  const [bulkCount, setBulkCount] = useState(5);
+  const [bulkVisitors, setBulkVisitors] = useState(true);
+  const [bulkSkipCache, setBulkSkipCache] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
 
   // 選択可能な会議室一覧 (16室)
   const allRooms = React.useMemo(() => Array.from({length:16}, (_,i)=>`ConfRoom${i+1}@bbslooklab.onmicrosoft.com`), []);
@@ -198,6 +204,50 @@ function App() {
     <div className="App">
       <header className="app-header">
         <h1>会議室カレンダー (複数選択対応)</h1>
+        <details style={{margin:'0.5rem auto',maxWidth:900,background:'#f8f9fa',padding:'0.75rem 1rem',borderRadius:8}}>
+          <summary style={{cursor:'pointer',fontWeight:600}}>バルク会議作成ツール (PoC)</summary>
+          <div style={{display:'flex',flexWrap:'wrap',gap:'0.75rem',marginTop:'0.75rem',alignItems:'flex-end'}}>
+            <div>
+              <label style={{fontSize:'0.7rem',fontWeight:600,display:'block'}}>対象会議室数</label>
+              <span style={{fontSize:'0.85rem'}}>{selectedRooms.length} 室</span>
+            </div>
+            <div>
+              <label style={{fontSize:'0.7rem',fontWeight:600,display:'block'}}>件数/室</label>
+              <input type="number" min={1} max={50} value={bulkCount} onChange={e=>setBulkCount(parseInt(e.target.value||'1'))} style={{width:80}} />
+            </div>
+            <div>
+              <label style={{fontSize:'0.7rem',fontWeight:600,display:'block'}}>VisitorID</label>
+              <input type="checkbox" checked={bulkVisitors} onChange={e=>setBulkVisitors(e.target.checked)} />
+            </div>
+            <div>
+              <label style={{fontSize:'0.7rem',fontWeight:600,display:'block'}}>skipCache</label>
+              <input type="checkbox" checked={bulkSkipCache} onChange={e=>setBulkSkipCache(e.target.checked)} />
+            </div>
+            <div>
+              <button disabled={bulkLoading || selectedRooms.length===0} onClick={async ()=>{
+                setBulkLoading(true);setBulkMessage(null);
+                try {
+                  const today = new Date();
+                  const dateStr = today.toISOString().slice(0,10);
+                  const roomsParam = selectedRooms.join(',');
+                  const url = `${API_BASE}/api/CreateBulkEvents?rooms=${encodeURIComponent(roomsParam)}&countPerRoom=${bulkCount}&date=${dateStr}&withVisitors=${bulkVisitors}&skipCache=${bulkSkipCache}`;
+                  const res = await axios.post(url, undefined, {timeout:60000});
+                  setBulkMessage(`作成成功: total=${res.data?.summary?.totalEventsCreated ?? 'N/A'}`);
+                  // 直書きした場合は即再フェッチ
+                  if(!bulkSkipCache) fetchEvents();
+                } catch(err:any){
+                  setBulkMessage(`エラー: ${err.message||err}`);
+                } finally { setBulkLoading(false);} 
+              }} style={{padding:'0.55rem 1.1rem',background:'#0d6efd',color:'#fff',border:'none',borderRadius:6,fontWeight:600,cursor:'pointer'}}>
+                {bulkLoading? '作成中...' : 'バルク作成実行'}
+              </button>
+            </div>
+            {bulkMessage && <div style={{fontSize:'0.7rem',color:'#333'}}>{bulkMessage}</div>}
+            <div style={{flexBasis:'100%',fontSize:'0.6rem',opacity:0.8}}>
+              skipCache=true: Webhook→Delta→Cache の遅延計測用。false: UI 即時反映。
+            </div>
+          </div>
+        </details>
         <div style={{display:'flex',flexWrap:'wrap',gap:'0.5rem',justifyContent:'center',maxWidth:900,margin:'0 auto 1rem'}}>
           {allRooms.map(r => {
             const active = selectedRooms.includes(r);

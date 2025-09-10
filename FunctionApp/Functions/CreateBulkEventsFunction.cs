@@ -25,7 +25,7 @@ namespace FunctionApp.Functions
 
         [Function("CreateBulkEvents")]
         public async Task<HttpResponseData> Run(
-            [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequestData req)
         {
             try
             {
@@ -283,6 +283,9 @@ namespace FunctionApp.Functions
 
                 var response = req.CreateResponse(HttpStatusCode.OK);
                 response.Headers.Add("Content-Type", "application/json");
+                response.Headers.Add("Access-Control-Allow-Origin", "*");
+                response.Headers.Add("Access-Control-Allow-Methods", "POST, OPTIONS");
+                response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, x-functions-key");
                 await response.WriteStringAsync(JsonSerializer.Serialize(summary, new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -295,6 +298,7 @@ namespace FunctionApp.Functions
                 
                 var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
                 errorResponse.Headers.Add("Content-Type", "application/json");
+                errorResponse.Headers.Add("Access-Control-Allow-Origin", "*");
                 await errorResponse.WriteStringAsync(JsonSerializer.Serialize(new
                 {
                     success = false,
