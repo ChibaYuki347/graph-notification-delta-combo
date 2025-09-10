@@ -22,6 +22,8 @@ interface Event {
       address: string;
     };
   };
+  created?: string;
+  ingestedAtUtc?: string;
   attendees?: Array<{
     emailAddress: {
       name: string;
@@ -90,6 +92,8 @@ function App() {
         start: { dateTime: startIso, timeZone: 'Asia/Tokyo' },
         end: { dateTime: endIso, timeZone: 'Asia/Tokyo' },
         organizer: { emailAddress: { name: organizerName, address: organizerEmail } },
+        created: e.created || e.Created || null,
+        ingestedAtUtc: e.ingestedAtUtc || null,
         attendees: e.attendees || [],
         isVisitorMeeting: !!e.hasVisitor || !!e.visitorId,
         visitorInfo: e.visitorId ? { hasVisitor: true, extractedNames: [e.visitorId], confidence: 1 } : undefined,
@@ -99,6 +103,7 @@ function App() {
     return mapped;
   };
 
+  const lastFetchCompletedAtRef = React.useRef<number | null>(null);
   const fetchEvents = React.useCallback(async () => {
     const startTime = Date.now();
     setLoading(true);
@@ -111,7 +116,8 @@ function App() {
       console.log(`Merged events: ${merged.length}`);
       setEvents(merged);
 
-      const responseTime = Date.now() - startTime;
+  const responseTime = Date.now() - startTime;
+  lastFetchCompletedAtRef.current = Date.now();
 
       // パフォーマンス統計更新
       setPerformanceStats(prev => {
@@ -133,6 +139,27 @@ function App() {
       setLoading(false);
     }
   }, [selectedRooms]);
+
+  // 送信済みイベントID記録
+  const reportedRef = React.useRef<Set<string>>(new Set());
+
+  // クライアント可視レイテンシ送信 (初回表示イベントのみ)
+  useEffect(() => {
+    if (!events || events.length === 0) return;
+    const fetchCompleted = lastFetchCompletedAtRef.current;
+    const newSamples = events.filter(e => !reportedRef.current.has(e.id)).map(e => ({
+      eventId: e.id,
+      room: e.room,
+      created: e.created,
+      ingestedAtUtc: e.ingestedAtUtc,
+      fetchedAtUtc: fetchCompleted ? new Date(fetchCompleted).toISOString() : null,
+      renderAtUtc: new Date().toISOString()
+    }));
+    if (newSamples.length === 0) return;
+    newSamples.forEach(s => reportedRef.current.add(s.eventId));
+    // 非同期 fire & forget
+    axios.post(`${API_BASE}/api/metrics/client-render`, { samples: newSamples }).catch(()=>{});
+  }, [events]);
 
   useEffect(() => {
     fetchEvents();

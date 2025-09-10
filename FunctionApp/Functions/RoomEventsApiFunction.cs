@@ -116,7 +116,8 @@ public class RoomEventsApiFunction
                         isCancelled,
                         attendeeCount,
                         created = createdDt,
-                        lastModified = lastModDt
+                        lastModified = lastModDt,
+                        ingestedAtUtc = je.TryGetProperty("ingestedAtUtc", out var ingestEl) && ingestEl.ValueKind == JsonValueKind.String ? ingestEl.GetString() : null
                     });
                 }
                 catch (Exception parseEx)
