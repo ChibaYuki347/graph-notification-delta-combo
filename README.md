@@ -29,6 +29,8 @@ Microsoft Graph APIを使用した会議室予約システムの通知・差分�
 
 ### 1. ローカル開発環境
 
+#### 基本環境（UI + API）
+
 ```bash
 # Azure Functions API起動
 cd FunctionApp
@@ -41,6 +43,28 @@ npm start
 
 # ブラウザで http://localhost:3000 を開く
 ```
+
+#### フル環境（Webhook開発対応）
+
+**必須ツール**: [Azurite](https://docs.microsoft.com/azure/storage/common/storage-use-azurite), [ngrok](https://ngrok.com/)
+
+```bash
+# 1. Azurite (Azure Storage エミュレータ)
+azurite --silent --location ./azurite
+
+# 2. Azure Functions API
+cd FunctionApp
+func start
+
+# 3. ngrok (HTTPS トンネル)
+ngrok http 7071
+
+# 4. React UI
+cd ui/room-calendar
+npm start
+```
+
+詳細は [ローカル開発手順](docs/local-development.md) を参照
 
 ### 2. 手動デプロイ（現在推奨）
 

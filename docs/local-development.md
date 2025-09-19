@@ -19,6 +19,12 @@ export DOTNET_ROOT="/opt/homebrew/opt/dotnet/libexec"
 # Node.js (UIフロントエンド用)
 brew install node
 
+# Azurite (Azure Storage エミュレータ)
+npm install -g azurite
+
+# ngrok (HTTPS トンネリング - Webhook開発用)
+brew install ngrok/ngrok/ngrok
+
 # Azure Functions Core Tools (通常は自動インストール済み)
 # brew install azure-functions-core-tools@4
 ```
@@ -34,6 +40,26 @@ az account show
 
 # 必要に応じてサブスクリプション変更
 az account set --subscription "your-subscription-id"
+```
+
+### ngrok認証（Webhook開発用）
+
+```bash
+# ngrokアカウント作成後、認証トークン設定
+ngrok config add-authtoken <your-authtoken>
+
+# 認証状態確認
+ngrok config check
+```
+
+### Azurite（Azure Storage エミュレータ）
+
+```bash
+# Azurite起動（デフォルトポート使用）
+azurite --silent --location ./azurite --debug ./azurite/debug.log
+
+# 別ターミナルで確認
+az storage account list --query "[?name=='devstoreaccount1']"
 ```
 
 ## 🏗️ プロジェクトビルド
@@ -56,7 +82,28 @@ dotnet publish -c Release
 
 ### ローカル実行
 
-#### Azure Functions (バックエンド)
+#### フル開発環境（Webhook対応）
+
+```bash
+# ターミナル1: Azurite起動
+azurite --silent --location ./azurite --debug ./azurite/debug.log
+
+# ターミナル2: Azure Functions API起動
+cd FunctionApp
+func start
+
+# ターミナル3: ngrok HTTPS トンネル
+ngrok http 7071
+
+# ターミナル4: React UI起動
+cd ui/room-calendar
+npm start
+
+# ngrokで表示されたHTTPS URLをWebhook設定に使用
+# 例: https://abc123.ngrok.io → Webhook__BaseUrl
+```
+
+#### Azure Functions (バックエンドのみ)
 
 ```bash
 # Functions Core Toolsでローカル実行
@@ -66,7 +113,7 @@ func start
 curl http://localhost:7071/api/health
 ```
 
-#### React UI (フロントエンド)
+#### React UI (フロントエンドのみ)
 
 ```bash
 # UIディレクトリに移動
@@ -95,6 +142,63 @@ npm start
 
 # ブラウザでUIからAPI連携テスト
 # http://localhost:3000 → http://localhost:7071/api/*
+```
+
+## 🔗 Webhook設定（ローカル開発）
+
+### ngrok URL取得
+
+```bash
+# ngrok起動後、Public URLを確認
+ngrok http 7071
+
+# 出力例:
+# Forwarding  https://abc123.ngrok.io -> http://localhost:7071
+```
+
+### 環境変数設定
+
+`local.settings.json`でngrok URLを設定：
+
+```json
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "Webhook__BaseUrl": "https://abc123.ngrok.io",
+    "GraphApi__ClientId": "your-client-id",
+    "GraphApi__ClientSecret": "your-client-secret",
+    "GraphApi__TenantId": "your-tenant-id"
+  }
+}
+```
+
+### Graph API Subscription設定
+
+Microsoft Graph APIでWebhook URLを登録：
+
+```bash
+# 例: カレンダー変更通知
+POST https://graph.microsoft.com/v1.0/subscriptions
+{
+  "changeType": "created,updated,deleted",
+  "notificationUrl": "https://abc123.ngrok.io/api/notifications",
+  "resource": "/me/events",
+  "expirationDateTime": "2024-12-31T23:59:59.0000000Z"
+}
+```
+
+### Webhook テスト
+
+```bash
+# 通知エンドポイントの確認
+curl -X POST https://abc123.ngrok.io/api/notifications \
+  -H "Content-Type: application/json" \
+  -d '{"test": "webhook"}'
+
+# ngrok Web UIでリクエスト詳細確認
+# http://localhost:4040
 ```
 
 ## 🧪 テスト・検証
