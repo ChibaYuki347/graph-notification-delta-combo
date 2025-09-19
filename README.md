@@ -24,6 +24,7 @@ Microsoft Graph APIを使用した会議室予約システムの通知・差分�
 - [デプロイ進捗レポート](docs/deployment-progress.md) - 解決した問題と残課題
 - [ローカル開発手順](docs/local-development.md) - 開発環境セットアップ
 - [デプロイ課題と回避策](docs/deployment-issues.md) - 詳細な問題分析と解決方法
+- [パフォーマンス検証レポート](docs/performance-verification-report.md) - 116室での性能検証結果
 
 ## 🚀 クイックスタート
 
@@ -65,6 +66,35 @@ npm start
 ```
 
 詳細は [ローカル開発手順](docs/local-development.md) を参照
+
+### 2. パフォーマンステスト実行
+
+大量会議室データでのパフォーマンス検証を行います。
+
+```bash
+# 全116室でのパフォーマンステスト
+./scripts/run-performance-tests.sh 116 5
+
+# 結果確認
+# - performance-reports/report_YYYYMMDD_HHMMSS.html (ブラウザで開く)
+# - performance-reports/report_YYYYMMDD_HHMMSS.md (Markdownレポート)
+# - performance-reports/test_results_YYYYMMDD_HHMMSS.json (詳細データ)
+```
+
+#### パフォーマンステストAPI
+
+```bash
+# カスタムテスト実行
+curl -X POST "http://localhost:7071/api/performance/test-suite?roomCount=50&eventsPerRoom=10"
+
+# HTMLレポート生成
+curl "http://localhost:7071/api/performance/report?format=html" > report.html
+
+# Markdownレポート生成
+curl "http://localhost:7071/api/performance/report?format=markdown" > report.md
+```
+
+詳細は [パフォーマンス検証レポート](docs/performance-verification-report.md) を参照
 
 ### 2. 手動デプロイ（現在推奨）
 

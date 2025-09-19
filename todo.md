@@ -5,9 +5,12 @@
 ## 0. リポジトリ整備
 
 - [x] 初期コミット & GitHub へ push（main）
-- [x] .gitignore 追加（bin/obj, local.settings.json, .azurite 等）
+- [x] .gitignore 追加（bin/obj, local.settings.json, .azurite, performance-reports 等）
 - [x] NuGet.config 追加（nuget.org のみ）
 - [x] ビルド修正（Functions 拡張, Graph Delta, 文字列スライス）→ ローカル build PASS
+- [x] パフォーマンステストスイート実装（PerformanceTestSuiteFunction）
+- [x] パフォーマンスレポート生成機能実装（PerformanceReportFunction）
+- [x] 116室対応の大量テスト実行スクリプト作成（run-performance-tests.sh）
 
 ## 1. ローカル実行セットアップ
 
@@ -53,8 +56,13 @@
 
 ## 7. スケール検証（PoC 範囲）
 
-- [ ] 10 室で動作確認→必要なら 50/100 室へ段階拡大
-- [ ] 関数の同時実行数/キュー可視化時間の観測（スロットリング対策検討）
+- [x] パフォーマンステストスイート実装（API: /api/performance/test-suite）
+- [x] 116室対応の大量テスト機能（CreateBulkEventsFunction拡張活用）
+- [x] エンドツーエンドレスポンス時間測定（10秒以内要件チェック）
+- [x] レポート生成機能（HTML/Markdown/JSON形式）
+- [x] 実行スクリプト作成（./scripts/run-performance-tests.sh）
+- [ ] 実際の116室での実行テスト
+- [ ] クライアント向けレポート提出
 
 ## 8. 監視・可観測性（任意/本番想定）
 
