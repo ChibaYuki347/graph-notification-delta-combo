@@ -34,6 +34,10 @@ param renewCron string = '0 0 */6 * * *'
 param enableKeyVault bool = true
 @description('Key Vault 名 (空文字で自動命名)')
 param keyVaultName string = ''
+@description('開発者(ユーザー) Object Id (Key Vault へロール付与したい場合)')
+param developerObjectId string = ''
+@description('developerObjectId へ Key Vault Secrets Officer ロールを付与するか')
+param assignDeveloperKvRole bool = false
 
 // =============================
 // Naming
@@ -83,7 +87,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 }
 
 // Plan
-resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
+resource plan 'Microsoft.Web/serverfarms@2024-11-01' = {
   name: planName
   location: location
   sku: {
@@ -132,23 +136,47 @@ resource kvSecretWebhookClientState 'Microsoft.KeyVault/vaults/secrets@2023-07-0
 }
 
 // Function App (v4 .NET 8 Isolated)
-resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
+resource functionApp 'Microsoft.Web/sites@2024-11-01' = {
   name: funcName
   location: location
   kind: 'functionapp,linux'
   properties: {
     httpsOnly: true
     serverFarmId: plan.id
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: '${storage.properties.primaryEndpoints.blob}app-package-${funcName}'
+          authentication: {
+            type: 'SystemAssignedIdentity'
+          }
+        }
+      }
+      runtime: {
+        name: 'dotnet-isolated'
+        version: '8.0'
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 100
+        instanceMemoryMB: 2048
+      }
+    }
     siteConfig: {
-      linuxFxVersion: 'DOTNET-ISOLATED|8.0'
+      numberOfWorkers: 1
+      acrUseManagedIdentityCreds: false
+      alwaysOn: false
+      http20Enabled: false
+      functionAppScaleLimit: 100
+      minimumElasticInstanceCount: 0
       appSettings: [
+        {
+          name: 'FUNCTIONS_EXTENSION_VERSION'
+          value: '~4'
+        }
         {
           name: 'AzureWebJobsStorage'
           value: storageConnectionString
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'dotnet-isolated'
         }
         {
           name: 'WEBSITE_RUN_FROM_PACKAGE'
@@ -215,7 +243,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   }
   identity: { type: 'SystemAssigned' }
   tags: { 'azd-env-name': environment }
-  // secrets 参照は暗黙依存があるため dependsOn 不要
 }
 
 // Key Vault RBAC Role Assignment (Secrets User)
@@ -226,6 +253,17 @@ resource kvSecretsUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' 
     principalId: functionApp.identity.principalId
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
     principalType: 'ServicePrincipal'
+  }
+}
+
+// 任意: 開発者ユーザーへ Secrets Officer を付与 (管理/ローテ用)。RBAC 伝播に数分かかる場合あり。
+resource kvDeveloperSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableKeyVault && assignDeveloperKvRole && !empty(developerObjectId)) {
+  name: guid(kv.id, developerObjectId, 'kv-dev-secrets-officer')
+  scope: kv
+  properties: {
+    principalId: developerObjectId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7') // Key Vault Secrets Officer
+    principalType: 'User'
   }
 }
 

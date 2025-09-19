@@ -1,10 +1,58 @@
-# 概要
+# Graph Calendar Notification PoC
 
-こちらでは **Graph APIアーキテクチャ案（変更通知＋Delta）** と、会議室300までを見据えた要件（**昨日＋1週間＝8日間**のキャッシュ、**UIはなる早≒P95≦10秒目安**、本文先頭に **VisitorID** を埋め込む）を前提に、**PoC用の最小アーキテクチャとサンプル実装**をまとめました。すぐ動かせる **Azure Functions(.NET 8, Isolated)** のプロジェクト雛形を用意しています。
+Microsoft Graph APIを使用した会議室予約システムの通知・差分取得アーキテクチャのProof of Concept実装です。
+
+## 📋 プロジェクト状況
+
+**最終更新**: 2025年9月19日  
+**インフラ状況**: ✅ デプロイ完了  
+**コード状況**: ⚠️ 手動デプロイ待ち  
+
+### 🎯 完了済み
+- ✅ Azure インフラストラクチャ構築（Bicep）
+- ✅ .NET 8 Isolated Functions プロジェクト開発
+- ✅ Graph API 変更通知＋Delta Query実装
+- ✅ VisitorID抽出ロジック実装
+- ✅ ローカル開発環境構築
+
+### ⚠️ 現在の課題
+- Azure Functions Consumption Plan でのデプロイエラー
+- `func azure functionapp publish` で状態競合エラー発生
+- **回避策**: Azure Portal経由での手動デプロイ
+
+### 📚 ドキュメント
+- [デプロイ進捗レポート](docs/deployment-progress.md) - 解決した問題と残課題
+- [ローカル開発手順](docs/local-development.md) - 開発環境セットアップ
+- [デプロイ課題と回避策](docs/deployment-issues.md) - 詳細な問題分析と解決方法
+
+## 🚀 クイックスタート
+
+### 1. ローカル開発環境
+
+```bash
+# Azure Functions API起動
+cd FunctionApp
+func start
+
+# React UI起動（別ターミナル）
+cd ui/room-calendar
+npm install
+npm start
+
+# ブラウザで http://localhost:3000 を開く
+```
+
+### 2. 手動デプロイ（現在推奨）
+
+1. Azure Portal → Function App (grcal-dev-func)
+2. Deployment Center → Manual Deployment
+3. ZIPファイルアップロード: `FunctionApp/bin/Release/deploy.zip`
+
+詳細は [デプロイ課題と回避策](docs/deployment-issues.md) を参照
 
 ---
 
-## PoCアーキテクチャ（最小構成）
+## 🏗️ PoCアーキテクチャ（最小構成）
 
 **目的**：UIは常にDB/キャッシュを参照→**通知着弾→差分取り込み**で“なる早”反映。本文中の **VisitorID** を抽出し、会議室と予定にひもづけて保持。
 **期間**：**昨日（-1日）〜＋7日** をキャッシュ。

@@ -35,6 +35,9 @@ set -euo pipefail
 #   --keyvault        Key Vault name to resolve secrets
 #   --secret-name     Graph client secret name (default Graph--ClientSecret)
 #   --state-secret    Webhook client state secret name (default Webhook--ClientState)
+#   --dry-run         Only print request bodies (no Graph API call)
+#   --retries         Validation 失敗時の再試行回数 (default 2)
+#   --delay-ms        各リクエスト間遅延 (ms, default 500)
 #   --help            Show help
 
 SECRET_NAME=Graph--ClientSecret
@@ -56,6 +59,9 @@ while [[ $# -gt 0 ]]; do
     --keyvault) KEYVAULT_NAME="$2"; shift;;
     --secret-name) SECRET_NAME="$2"; shift;;
     --state-secret) STATE_SECRET="$2"; shift;;
+  --dry-run) DRY_RUN=1;;
+  --retries) RETRIES="$2"; shift;;
+  --delay-ms) DELAY_MS="$2"; shift;;
     --help|-h) print_help; exit 0;;
     *) echo "Unknown arg: $1" >&2; exit 1;;
   esac
@@ -77,13 +83,17 @@ fi
 : "${GRAPH_CLIENT_SECRET:?--client-secret 必須 または Key Vault 指定}" 
 : "${WEBHOOK_CLIENT_STATE:?--client-state 必須 または Key Vault 指定}" 
 
-# Acquire token
-TOKEN=$(curl -s -X POST "https://login.microsoftonline.com/$GRAPH_TENANT_ID/oauth2/v2.0/token" \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d "client_id=$GRAPH_CLIENT_ID&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default&client_secret=$GRAPH_CLIENT_SECRET&grant_type=client_credentials" | jq -r '.access_token')
+if [[ -z "${DRY_RUN:-}" ]]; then
+  # Acquire token (skip in dry-run)
+  TOKEN=$(curl -s -X POST "https://login.microsoftonline.com/$GRAPH_TENANT_ID/oauth2/v2.0/token" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d "client_id=$GRAPH_CLIENT_ID&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default&client_secret=$GRAPH_CLIENT_SECRET&grant_type=client_credentials" | jq -r '.access_token')
 
-if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
-  echo "トークン取得失敗" >&2; exit 1
+  if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
+    echo "トークン取得失敗" >&2; exit 1
+  fi
+else
+  echo "[dry-run] Graph API 呼び出しをスキップします" >&2
 fi
 
 NOTIFICATION_URL="${FUNCTION_URL%/}/api/graph/notifications"
@@ -91,31 +101,59 @@ EXPIRES=$(date -u -v+6d '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '+6 days
 
 IFS=',' read -r -a ROOMS <<< "$ROOMS_CSV"
 RESULTS=()
+RETRIES=${RETRIES:-2}
+DELAY_MS=${DELAY_MS:-500}
 
 for ROOM in "${ROOMS[@]}"; do
   ROOM_TRIM=$(echo "$ROOM" | awk '{$1=$1};1')
   echo "[info] Creating subscription for $ROOM_TRIM" >&2
+  # Microsoft Graph REST API は camelCase のプロパティ名を要求する
   BODY=$(jq -n \
     --arg ct "created,updated,deleted" \
     --arg url "$NOTIFICATION_URL" \
     --arg res "/users/$ROOM_TRIM/events" \
     --arg cs "$WEBHOOK_CLIENT_STATE" \
-    --arg exp "$EXPIRES" '{ChangeType:$ct,NotificationUrl:$url,Resource:$res,ClientState:$cs,ExpirationDateTime:$exp}')
+    --arg exp "$EXPIRES" '{changeType:$ct,notificationUrl:$url,resource:$res,clientState:$cs,expirationDateTime:$exp}')
 
-  RESP=$(curl -s -D - -o /tmp/sub_resp.json -X POST https://graph.microsoft.com/v1.0/subscriptions \
-    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$BODY")
-  STATUS=$(echo "$RESP" | awk 'NR==1{print $2}')
-  if [[ "$STATUS" =~ ^2 ]]; then
-    ID=$(jq -r '.id' /tmp/sub_resp.json)
-    EXP=$(jq -r '.expirationDateTime' /tmp/sub_resp.json)
-    RESULTS+=("{\"room\":\"$ROOM_TRIM\",\"subscriptionId\":\"$ID\",\"expiration\":\"$EXP\"}")
-  else
-    MSG=$(cat /tmp/sub_resp.json | jq -r '.error.message? // "unknown"')
-    RESULTS+=("{\"room\":\"$ROOM_TRIM\",\"error\":\"$STATUS\",\"message\":\"$MSG\"}")
+  if [[ "${DEBUG:-}" == "1" ]]; then
+    echo "[debug] request body: $(echo "$BODY" | jq -c '.')" >&2
   fi
-  rm -f /tmp/sub_resp.json
+
+  if [[ -n "${DRY_RUN:-}" ]]; then
+    echo "[dry-run] BODY for $ROOM_TRIM: $(echo "$BODY" | jq -c '.')" >&2
+    RESULTS+=("{\"room\":\"$ROOM_TRIM\",\"dryRun\":true}")
+  else
+    attempt=0
+    success=0
+    while (( attempt <= RETRIES )); do
+      [[ $attempt -gt 0 ]] && sleep "$(bc <<< "scale=3;$DELAY_MS/1000")"
+      RESP=$(curl -s -D - -o /tmp/sub_resp.json -X POST https://graph.microsoft.com/v1.0/subscriptions \
+        -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$BODY")
+      STATUS=$(echo "$RESP" | awk 'NR==1{print $2}')
+      if [[ "$STATUS" =~ ^2 ]]; then
+        ID=$(jq -r '.id' /tmp/sub_resp.json)
+        EXP=$(jq -r '.expirationDateTime' /tmp/sub_resp.json)
+        RESULTS+=("{\"room\":\"$ROOM_TRIM\",\"subscriptionId\":\"$ID\",\"expiration\":\"$EXP\",\"attempt\":$attempt}")
+        success=1
+        break
+      else
+        MSG=$(cat /tmp/sub_resp.json | jq -r '.error.message? // "unknown"')
+        if [[ $attempt -lt RETRIES ]]; then
+          echo "[warn] attempt=$attempt status=$STATUS room=$ROOM_TRIM retrying..." >&2
+        fi
+      fi
+      ((attempt++))
+    done
+    if (( success==0 )); then
+      MSG=$(cat /tmp/sub_resp.json | jq -r '.error.message? // "unknown"')
+      RESULTS+=("{\"room\":\"$ROOM_TRIM\",\"error\":\"$STATUS\",\"message\":\"$MSG\",\"attempts\":$attempt}")
+    fi
+    rm -f /tmp/sub_resp.json
+  fi
+  # inter-room pacing
+  sleep "$(bc <<< "scale=3;$DELAY_MS/1000")"
 done
 
-JSON=$(printf '%s\n' "${RESULTS[@]}" | jq -s --arg notificationUrl "$NOTIFICATION_URL" '{notificationUrl:$notificationUrl, count:(length), results:.}')
+JSON=$(printf '%s\n' "${RESULTS[@]}" | jq -s --arg notificationUrl "$NOTIFICATION_URL" --arg dry "${DRY_RUN:-}" '{notificationUrl:$notificationUrl, dryRun:($dry=="1"), count:(length), results:.}')
 
 echo "$JSON" | jq '.'
