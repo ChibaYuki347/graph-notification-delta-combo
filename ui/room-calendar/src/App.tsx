@@ -47,6 +47,8 @@ interface PerformanceStats {
   requestCount: number;
   averageResponseTime: number;
   p95ResponseTime: number;
+  lastApiResponseTime?: number; // 新規追加: API側レスポンス時間
+  totalEvents?: number; // 新規追加: 取得イベント総数
 }
 
 // API ベースURL (環境変数 or デフォルト)
@@ -87,15 +89,22 @@ function App() {
   // ルーム検索用
   const [roomFilter, setRoomFilter] = useState("");
 
-  const fetchEventsForRoom = async (roomUpn: string): Promise<Event[]> => {
-    const response = await axios.get(`${API_BASE}/api/rooms/${encodeURIComponent(roomUpn)}/events`);
+  // 新しい統合API呼び出し
+  const fetchAllRoomEvents = async (): Promise<{ events: Event[], apiStats?: any }> => {
+    const response = await axios.get(`${API_BASE}/api/room-events?raw=true`);
     const data = response.data;
-    const sourceArray: any[] = Array.isArray(data) ? data : (Array.isArray(data?.events) ? data.events : []);
+    
+    // 新しいAPI形式: { events: [], eventCount: number, stats: {...}, performance: {...} }
+    const sourceArray: any[] = Array.isArray(data?.events) ? data.events : [];
+    console.log(`API Response: ${sourceArray.length} events from unified endpoint, API response time: ${data?.performance?.responseTimeMs}ms`);
+    
     const mapped: Event[] = sourceArray.map((e: any) => {
-      const startIso = e.start?.dateTime || e.start || e.startDateTime || e.Start || e.startISO;
-      const endIso = e.end?.dateTime || e.end || e.endDateTime || e.End || e.endISO;
-      const organizerName = e.organizer?.emailAddress?.name || e.organizer || e.organizerName || 'Unknown';
-      const organizerEmail = e.organizer?.emailAddress?.address || e.organizerEmail || 'unknown@example.com';
+      // 新しいAPIレスポンス形式に対応
+      const startIso = e.start || e.startDateTime || e.Start || e.startISO;
+      const endIso = e.end || e.endDateTime || e.End || e.endISO;
+      const organizerName = e.organizer || e.organizerName || 'Unknown';
+      const organizerEmail = e.organizerEmail || 'unknown@example.com';
+      
       return {
         id: e.id || e.eventId || crypto.randomUUID(),
         subject: e.subject || '(no subject)',
@@ -107,10 +116,18 @@ function App() {
         attendees: e.attendees || [],
         isVisitorMeeting: !!e.hasVisitor || !!e.visitorId,
         visitorInfo: e.visitorId ? { hasVisitor: true, extractedNames: [e.visitorId], confidence: 1 } : undefined,
-        room: roomUpn
+        room: e.room || e.roomName || 'Unknown Room'
       };
     }).filter(ev => ev.start?.dateTime && ev.end?.dateTime);
-    return mapped;
+    
+    return { 
+      events: mapped, 
+      apiStats: {
+        responseTimeMs: data?.performance?.responseTimeMs,
+        totalEvents: data?.eventCount,
+        stats: data?.stats
+      }
+    };
   };
 
   const lastFetchCompletedAtRef = React.useRef<number | null>(null);
@@ -120,16 +137,23 @@ function App() {
     setError(null);
 
     try {
-      // 選択された複数会議室を並列取得
-      const all = await Promise.all(selectedRooms.map(r => fetchEventsForRoom(r)));
-      const merged = all.flat();
-      console.log(`Merged events: ${merged.length}`);
-      setEvents(merged);
+      // 統合APIエンドポイントを使用 (全会議室のイベントを一括取得)
+      const result = await fetchAllRoomEvents();
+      const allEvents = result.events;
+      const apiStats = result.apiStats;
+      
+      // 選択された会議室のイベントのみフィルタリング
+      const filteredEvents = allEvents.filter(event => 
+        selectedRooms.some(roomUpn => event.room === roomUpn)
+      );
+      
+      console.log(`Total events: ${allEvents.length}, Filtered for selected rooms: ${filteredEvents.length}`);
+      setEvents(filteredEvents);
 
-  const responseTime = Date.now() - startTime;
-  lastFetchCompletedAtRef.current = Date.now();
+      const responseTime = Date.now() - startTime;
+      lastFetchCompletedAtRef.current = Date.now();
 
-      // パフォーマンス統計更新
+      // パフォーマンス統計更新（API側統計も含む）
       setPerformanceStats(prev => {
         const newRequestCount = prev.requestCount + 1;
         const newAverageResponseTime = (prev.averageResponseTime * prev.requestCount + responseTime) / newRequestCount;
@@ -138,7 +162,9 @@ function App() {
           responseTime,
           requestCount: newRequestCount,
           averageResponseTime: newAverageResponseTime,
-          p95ResponseTime: newP95ResponseTime
+          p95ResponseTime: newP95ResponseTime,
+          lastApiResponseTime: apiStats?.responseTimeMs,
+          totalEvents: apiStats?.totalEvents
         };
       });
     } catch (err) {

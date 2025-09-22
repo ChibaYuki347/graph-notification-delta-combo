@@ -140,7 +140,7 @@ public class PerformanceTestSuiteFunction
                 {
                     room,
                     success = true,
-                    latencyMs = roomSw.ElapsedMilliseconds
+                    latencyMs = (int)roomSw.ElapsedMilliseconds
                 });
             }
             catch (Exception ex)
@@ -151,7 +151,7 @@ public class PerformanceTestSuiteFunction
                     room,
                     success = false,
                     error = ex.Message,
-                    latencyMs = roomSw.ElapsedMilliseconds
+                    latencyMs = (int)roomSw.ElapsedMilliseconds
                 });
             }
         }
@@ -163,7 +163,7 @@ public class PerformanceTestSuiteFunction
 
         return new
         {
-            totalTimeMs = sw.ElapsedMilliseconds,
+            totalTimeMs = (int)sw.ElapsedMilliseconds,
             roomsProcessed = rooms.Count,
             successCount = successResults.Count,
             failureCount = results.Count - successResults.Count,
@@ -223,7 +223,7 @@ public class PerformanceTestSuiteFunction
                     room,
                     eventsCreated = roomEvents,
                     errors = roomErrors,
-                    timeMs = roomSw.ElapsedMilliseconds
+                    timeMs = (int)roomSw.ElapsedMilliseconds
                 };
             }
             finally
@@ -239,7 +239,7 @@ public class PerformanceTestSuiteFunction
 
         return new
         {
-            totalTimeMs = sw.ElapsedMilliseconds,
+            totalTimeMs = (int)sw.ElapsedMilliseconds,
             roomsProcessed = rooms.Count,
             totalEventsCreated = totalEvents,
             totalErrors = errors,
@@ -273,7 +273,7 @@ public class PerformanceTestSuiteFunction
                     success = true,
                     eventsProcessed,
                     visitorIdsExtracted,
-                    latencyMs = roomSw.ElapsedMilliseconds
+                    latencyMs = (int)roomSw.ElapsedMilliseconds
                 });
             }
             catch (Exception ex)
@@ -284,7 +284,7 @@ public class PerformanceTestSuiteFunction
                     room,
                     success = false,
                     error = ex.Message,
-                    latencyMs = roomSw.ElapsedMilliseconds
+                    latencyMs = (int)roomSw.ElapsedMilliseconds
                 });
             }
         }
@@ -296,7 +296,7 @@ public class PerformanceTestSuiteFunction
 
         return new
         {
-            totalTimeMs = sw.ElapsedMilliseconds,
+            totalTimeMs = (int)sw.ElapsedMilliseconds,
             roomsProcessed = rooms.Count,
             successCount = successResults.Count,
             totalEventsProcessed = successResults.Sum(r => ((dynamic)r).eventsProcessed),
@@ -334,14 +334,14 @@ public class PerformanceTestSuiteFunction
             await Task.Delay(Random.Shared.Next(10, 50));
             
             e2eSw.Stop();
-            endToEndLatencies.Add(e2eSw.ElapsedMilliseconds);
+            endToEndLatencies.Add((int)e2eSw.ElapsedMilliseconds);
         }
 
         sw.Stop();
 
         return new
         {
-            totalTimeMs = sw.ElapsedMilliseconds,
+            totalTimeMs = (int)sw.ElapsedMilliseconds,
             roomsProcessed = rooms.Count,
             averageEndToEndMs = endToEndLatencies.Average(),
             p50EndToEndMs = Percentile(endToEndLatencies, 50),
@@ -370,7 +370,7 @@ public class PerformanceTestSuiteFunction
                 // キャッシュ検索のシミュレーション
                 await Task.Delay(Random.Shared.Next(5, 50));
                 searchSw.Stop();
-                searchLatencies.Add(searchSw.ElapsedMilliseconds);
+                searchLatencies.Add((int)searchSw.ElapsedMilliseconds);
             }
             catch
             {
@@ -383,7 +383,7 @@ public class PerformanceTestSuiteFunction
 
         return new
         {
-            totalTimeMs = sw.ElapsedMilliseconds,
+            totalTimeMs = (int)sw.ElapsedMilliseconds,
             roomsSearched = searchLatencies.Count,
             averageSearchMs = searchLatencies.Any() ? searchLatencies.Average() : 0,
             p95SearchMs = searchLatencies.Any() ? Percentile(searchLatencies, 95) : 0,
