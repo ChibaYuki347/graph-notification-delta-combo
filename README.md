@@ -14,6 +14,7 @@ Microsoft Graph APIを使用した会議室予約システムの通知・差分�
 - ✅ Graph API 変更通知＋Delta Query実装
 - ✅ VisitorID抽出ロジック実装
 - ✅ ローカル開発環境構築
+- ✅ **パフォーマンス検証完了** - **平均応答時間0.013秒（目標10秒の99.87%改善）**
 
 ### ⚠️ 現在の課題
 - Azure Functions Consumption Plan でのデプロイエラー
@@ -25,6 +26,7 @@ Microsoft Graph APIを使用した会議室予約システムの通知・差分�
 - [ローカル開発手順](docs/local-development.md) - 開発環境セットアップ
 - [デプロイ課題と回避策](docs/deployment-issues.md) - 詳細な問題分析と解決方法
 - [パフォーマンス検証レポート](docs/performance-verification-report.md) - 116室での性能検証結果
+- **[🚀 パフォーマンステスト結果](docs/performance-test-report.md)** - **10秒要件に対し99.87%改善達成**
 
 ## 🚀 クイックスタート
 
