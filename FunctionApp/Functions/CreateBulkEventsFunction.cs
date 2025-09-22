@@ -78,13 +78,17 @@ namespace FunctionApp.Functions
                         {
                             var eventStartTime = DateTime.UtcNow;
                             
-                            // 時間をランダムに分散
+                            // 時間をランダムに分散 + 今週中の日付にも分散
                             var random = new Random();
                             var startTimeHour = random.Next(startHour, endHour - 1);
                             var startTimeMinute = random.Next(0, 60);
                             var durationMinutes = random.Next(30, 121); // 30分〜2時間
 
-                            var eventStart = targetDate.Date.AddHours(startTimeHour).AddMinutes(startTimeMinute);
+                            // 今週中の日付をランダムに選択（今日から+6日間）
+                            var daysFromToday = random.Next(0, 7);
+                            var actualEventDate = DateTime.Today.AddDays(daysFromToday);
+                            
+                            var eventStart = actualEventDate.AddHours(startTimeHour).AddMinutes(startTimeMinute);
                             var eventEnd = eventStart.AddMinutes(durationMinutes);
 
                             // VisitorID生成（50%の確率で来客あり）
@@ -94,7 +98,7 @@ namespace FunctionApp.Functions
                                 visitorId = Guid.NewGuid().ToString();
                             }
 
-                            var subject = $"負荷テスト会議 #{i + 1:D3}";
+                            var subject = $"負荷テスト会議 #{i + 1:D3} ({actualEventDate:MM/dd})";
                             if (visitorId != null)
                             {
                                 subject += " [来客対応]";
